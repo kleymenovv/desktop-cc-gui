@@ -23,6 +23,10 @@ const MissionWorkbench = lazy(() =>
     default: m.MissionWorkbench,
   })),
 );
+// Agent board loads on first open (not a startup path).
+const AgentBoard = lazy(() =>
+  import("@/features/agent-board/AgentBoard").then((m) => ({ default: m.AgentBoard })),
+);
 // 插件 hub 也在打开时才加载（插件商店/管理不是启动路径）。
 const PluginHub = lazy(() =>
   import("@/features/plugins/hub/PluginHub").then((m) => ({ default: m.PluginHub })),
@@ -80,6 +84,7 @@ function centerSurfaces(input: {
   activePluginTabId: string | null;
   pluginHubActive: boolean;
   missionActive: boolean;
+  boardActive: boolean;
   notesActive: boolean;
   diffOpen: boolean;
 }): {
@@ -89,6 +94,7 @@ function centerSurfaces(input: {
   plugin: boolean;
   hub: boolean;
   mission: boolean;
+  board: boolean;
   notes: boolean;
 } {
   if (input.diffOpen) {
@@ -99,6 +105,7 @@ function centerSurfaces(input: {
       plugin: false,
       hub: false,
       mission: false,
+      board: false,
       notes: false,
     };
   }
@@ -109,27 +116,27 @@ function centerSurfaces(input: {
   // 版本更新说明是最弱的单实例面：它由更新检查自动弹出，不该抢用户正在看的
   // 插件中心 / 任务工作台（自动弹出时若前两者在视，页签高亮先落到自己的页签，
   // 用户点一下即可切回来）。
-  const notesInView = input.notesActive && !missionInView && !hubInView;
+  // The agent board yields only to the other explicitly opened singletons.
+  const boardInView = input.boardActive && !missionInView && !hubInView;
+  const notesInView = input.notesActive && !missionInView && !hubInView && !boardInView;
+  const singletonInView = missionInView || hubInView || boardInView || notesInView;
   return {
     chat: !(
       input.activeFilePath ||
       browserInView ||
       pluginInView ||
-      hubInView ||
-      missionInView ||
-      notesInView
+      singletonInView
     ),
     editor:
       input.activeFilePath !== null &&
       !browserInView &&
       !pluginInView &&
-      !hubInView &&
-      !missionInView &&
-      !notesInView,
-    browser: browserInView && !missionInView && !hubInView && !notesInView,
-    plugin: pluginInView && !missionInView && !hubInView && !notesInView,
+      !singletonInView,
+    browser: browserInView && !singletonInView,
+    plugin: pluginInView && !singletonInView,
     hub: hubInView,
     mission: missionInView,
+    board: boardInView,
     notes: notesInView,
   };
 }
@@ -152,6 +159,8 @@ export function ChatCenterPane({
   pluginHubActive,
   missionOpen,
   missionActive,
+  boardOpen,
+  boardActive,
   notesOpen,
   notesActive,
   diffView,
@@ -178,6 +187,9 @@ export function ChatCenterPane({
   /** 任务工作台中心页签：是否打开 / 是否在视。 */
   missionOpen: boolean;
   missionActive: boolean;
+  /** Agent board center tab: open / in view. */
+  boardOpen: boolean;
+  boardActive: boolean;
   /** 版本更新说明中心页签（更新检查发现新版本时自动打开）：是否打开 / 是否在视。 */
   notesOpen: boolean;
   notesActive: boolean;
@@ -204,6 +216,7 @@ export function ChatCenterPane({
     activePluginTabId,
     pluginHubActive,
     missionActive,
+    boardActive,
     notesActive,
     diffOpen: diffView !== null,
   });
@@ -270,6 +283,22 @@ export function ChatCenterPane({
           <Suspense fallback={<CenteredSpinner />}>
             <MissionWorkbench />
           </Suspense>
+        </Surface>
+      )}
+
+      {/* Agent board: mounted only while in view — it subscribes to every
+          session's stream, which is wasted work behind another surface. */}
+      {boardOpen && (
+        <Surface visible={surfaces.board}>
+          {surfaces.board && (
+            <Suspense fallback={<CenteredSpinner />}>
+              <AgentBoard
+                engines={engines}
+                workspaces={workspaces}
+                startNewChat={startNewChat}
+              />
+            </Suspense>
+          )}
         </Surface>
       )}
 

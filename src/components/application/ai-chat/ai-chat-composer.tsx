@@ -217,7 +217,18 @@ export function Composer({
     const el = editableRef.current;
     if (!el) return;
     el.innerHTML = sanitizeEditableHtml(htmlFromText(text));
-    setCaretOffset(el, text.length);
+    // Two composers can share one draft (the main chat plus an agent-board
+    // panel, or two split panes on the same session). DOM Selection is
+    // document-wide, so a field syncing its value while the user types in
+    // another field must not move the caret out of it — that is the
+    // "typing stops after a couple of letters, click to resume" bug.
+    const active = document.activeElement;
+    const anotherFieldHasFocus =
+      active instanceof HTMLElement &&
+      !el.contains(active) &&
+      (active.matches("input, textarea, select") ||
+        active.closest("[contenteditable='true']") !== null);
+    if (!anotherFieldHasFocus) setCaretOffset(el, text.length);
   }, []);
 
   // Replace the field's content and emit upward (history recall, Tab accept).

@@ -4,7 +4,9 @@ import Plus from "lucide-react/dist/esm/icons/plus";
 import Search from "lucide-react/dist/esm/icons/search";
 import ChevronDown from "lucide-react/dist/esm/icons/chevron-down";
 import CloudDownload from "lucide-react/dist/esm/icons/cloud-download";
+import Download from "lucide-react/dist/esm/icons/download";
 import GitBranch from "lucide-react/dist/esm/icons/git-branch";
+import GitCommitHorizontal from "lucide-react/dist/esm/icons/git-commit-horizontal";
 import RefreshCw from "lucide-react/dist/esm/icons/refresh-cw";
 import CloudUpload from "lucide-react/dist/esm/icons/cloud-upload";
 import FolderTree from "lucide-react/dist/esm/icons/folder-tree";
@@ -15,12 +17,14 @@ import { IconButton } from "@/components/base/buttons/icon-button";
 import {
   Dropdown,
   DropdownDivider,
+  DropdownGroup,
   DropdownItem,
   DropdownPopover,
   DropdownTrigger,
 } from "@/components/base/dropdown/dropdown";
 import { type BranchInfo } from "@/lib/ipc";
 import { cx } from "@/utils/cx";
+import { GitHistoryDialog } from "./GitHistoryDialog";
 import { useGitStore } from "./store";
 
 interface ChangesPanelHeaderProps {
@@ -65,9 +69,11 @@ export function ChangesPanelHeader({
   const [creatingBranch, setCreatingBranch] = useState(false);
   const [newBranchName, setNewBranchName] = useState("");
   const [branchQuery, setBranchQuery] = useState("");
-  // Spin → check → idle click feedback for refresh; check flash only for
+  const [historyOpen, setHistoryOpen] = useState(false);
+  // Spin → check → idle click feedback for refresh/fetch; check flash only for
   // pull/push (a spinning cloud reads as a glitch, not progress).
   const refreshAction = useActionFeedback({ spin: true });
+  const fetchAction = useActionFeedback({ spin: true });
   const pullAction = useActionFeedback();
   const pushAction = useActionFeedback();
 
@@ -87,6 +93,47 @@ export function ChangesPanelHeader({
       ),
     );
   };
+
+  const handleFetch = () => {
+    if (fetchAction.feedback === "running") return;
+    run("fetch", () => fetchAction.start(() => useGitStore.getState().fetch(workspacePath)));
+  };
+
+  // Pull the current upstream when no source is given; otherwise the chosen
+  // remote branch (the picker lets the user pull from any fetched branch).
+  const handlePull = (remote?: string, branchName?: string) => {
+    run("pull", () =>
+      pullAction.start(() => {
+        const store = useGitStore.getState();
+        return remote && branchName
+          ? store.pullFrom(workspacePath, remote, branchName)
+          : store.pull(workspacePath);
+      }),
+    );
+  };
+
+  const currentUpstream = useMemo(
+    () => (branches ?? []).find((b) => !b.isRemote && b.name === branch)?.upstream,
+    [branches, branch],
+  );
+  const pullSources = useMemo(() => {
+    const seen = new Set<string>();
+    const out: Array<{ remote: string; branch: string; label: string }> = [];
+    for (const b of branches ?? []) {
+      if (!b.isRemote) continue;
+      const slash = b.name.indexOf("/");
+      if (slash <= 0 || slash === b.name.length - 1) continue;
+      const key = b.name;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push({
+        remote: b.name.slice(0, slash),
+        branch: b.name.slice(slash + 1),
+        label: b.name,
+      });
+    }
+    return out;
+  }, [branches]);
 
   return (
     <div className="flex flex-col gap-2 border-b border-separator-border px-3 py-2.5">
@@ -111,19 +158,20 @@ export function ChangesPanelHeader({
           viewMode={viewMode}
           onToggleViewMode={onToggleViewMode}
           refreshFeedback={refreshAction.feedback}
+          fetchFeedback={fetchAction.feedback}
           pullFeedback={pullAction.feedback}
           pushFeedback={pushAction.feedback}
           onRefresh={handleRefresh}
-          onPull={() =>
-            run("pull", () =>
-              pullAction.start(() => useGitStore.getState().pull(workspacePath)),
-            )
-          }
+          onFetch={handleFetch}
+          onPull={handlePull}
           onPush={() =>
             run("push", () =>
               pushAction.start(() => useGitStore.getState().push(workspacePath)),
             )
           }
+          onOpenHistory={() => setHistoryOpen(true)}
+          pullSources={pullSources}
+          upstream={currentUpstream}
         />
       </div>
       {!notRepo && (
@@ -161,33 +209,53 @@ export function ChangesPanelHeader({
         />
       )}
       {error && <HeaderError message={error} onDismiss={onDismissError} />}
+      {historyOpen && (
+        <GitHistoryDialog workspacePath={workspacePath} onClose={() => setHistoryOpen(false)} />
+      )}
     </div>
   );
 }
 
 /** Refresh / pull / push plus the flat–tree toggle, pinned to the right. */
+const ICON_ACTION_CLASS = cx(
+  "inline-flex size-7 shrink-0 items-center justify-center rounded-md",
+  "text-foreground-icon-secondary outline-none transition-colors",
+  "hover:bg-background-secondary-hover focus-visible:ring-2 focus-visible:ring-border-focus-ring",
+  "disabled:cursor-not-allowed disabled:opacity-50",
+);
+
 function HeaderActions({
   notRepo,
   pending,
   viewMode,
   onToggleViewMode,
   refreshFeedback,
+  fetchFeedback,
   pullFeedback,
   pushFeedback,
   onRefresh,
+  onFetch,
   onPull,
   onPush,
+  onOpenHistory,
+  pullSources,
+  upstream,
 }: {
   notRepo: boolean;
   pending: Record<string, true>;
   viewMode?: "flat" | "tree";
   onToggleViewMode?: () => void;
   refreshFeedback: ReturnType<typeof useActionFeedback>["feedback"];
+  fetchFeedback: ReturnType<typeof useActionFeedback>["feedback"];
   pullFeedback: ReturnType<typeof useActionFeedback>["feedback"];
   pushFeedback: ReturnType<typeof useActionFeedback>["feedback"];
   onRefresh: () => void;
-  onPull: () => void;
+  onFetch: () => void;
+  onPull: (remote?: string, branch?: string) => void;
   onPush: () => void;
+  onOpenHistory: () => void;
+  pullSources: Array<{ remote: string; branch: string; label: string }>;
+  upstream: string | undefined;
 }) {
   const { t } = useTranslation();
   return (
@@ -212,15 +280,62 @@ function HeaderActions({
         <ActionFeedbackIcon icon={RefreshCw} feedback={refreshFeedback} spin />
       </IconButton>
       <IconButton
-        icon={CloudDownload}
+        icon={Download}
         size="small"
-        aria-label={t("git.pull")}
-        title={t("git.pull")}
-        disabled={notRepo || pending.pull === true}
-        onClick={onPull}
+        aria-label={t("git.fetch")}
+        title={t("git.fetch")}
+        disabled={notRepo || pending.fetch === true}
+        onClick={onFetch}
       >
-        <ActionFeedbackIcon icon={CloudDownload} feedback={pullFeedback} />
+        <ActionFeedbackIcon icon={Download} feedback={fetchFeedback} spin />
       </IconButton>
+      {/* Pull is a menu: the current upstream is the default, but any fetched
+          remote branch can be chosen as the source. */}
+      <Dropdown>
+        <DropdownTrigger
+          aria-label={t("git.pull")}
+          isDisabled={notRepo || pending.pull === true}
+          className={ICON_ACTION_CLASS}
+        >
+          <ActionFeedbackIcon icon={CloudDownload} feedback={pullFeedback} />
+        </DropdownTrigger>
+        <DropdownPopover aria-label={t("git.pullFrom")} placement="bottom end" className="min-w-60">
+          {upstream && (
+            <DropdownItem
+              className="px-2 py-1.5"
+              onSelect={() => {
+                const slash = upstream.indexOf("/");
+                if (slash > 0) onPull(upstream.slice(0, slash), upstream.slice(slash + 1));
+                else onPull();
+              }}
+            >
+              <span className="truncate text-body-medium text-text-primary">
+                {t("git.pullUpstream", { branch: upstream })}
+              </span>
+            </DropdownItem>
+          )}
+          {upstream && <DropdownDivider />}
+          <DropdownGroup label={t("git.fromRemoteBranch")}>
+            {pullSources.length === 0 ? (
+              <span className="block px-2 py-1.5 text-body-medium text-text-tertiary">
+                {t("git.noRemoteBranches")}
+              </span>
+            ) : (
+              pullSources.map((source) => (
+                <DropdownItem
+                  key={source.label}
+                  className="px-2 py-1.5"
+                  onSelect={() => onPull(source.remote, source.branch)}
+                >
+                  <span className="truncate text-body-medium text-text-primary">
+                    {source.label}
+                  </span>
+                </DropdownItem>
+              ))
+            )}
+          </DropdownGroup>
+        </DropdownPopover>
+      </Dropdown>
       <IconButton
         icon={CloudUpload}
         size="small"
@@ -231,7 +346,56 @@ function HeaderActions({
       >
         <ActionFeedbackIcon icon={CloudUpload} feedback={pushFeedback} />
       </IconButton>
+      <IconButton
+        icon={GitCommitHorizontal}
+        size="small"
+        aria-label={t("git.history")}
+        title={t("git.history")}
+        disabled={notRepo}
+        onClick={onOpenHistory}
+      />
     </div>
+  );
+}
+
+/** Upstream + last commit, shown as the row tooltip. */
+function branchTooltip(b: BranchInfo): string {
+  return [b.upstream ? `→ ${b.upstream}` : null, b.lastCommitSubject]
+    .filter(Boolean)
+    .join("\n");
+}
+
+/** ↓ behind / ↑ ahead badges: which branches can be updated or pushed. */
+function BranchCounts({
+  ahead,
+  behind,
+  className,
+}: {
+  ahead?: number;
+  behind?: number;
+  className?: string;
+}) {
+  const { t } = useTranslation();
+  if (!(ahead ?? 0) && !(behind ?? 0)) return null;
+  return (
+    <span className={cx("flex shrink-0 items-center gap-1", className)}>
+      {(behind ?? 0) > 0 && (
+        <span
+          className="rounded bg-status-yellow-background/40 px-1 text-caption-2-medium tabular-nums text-status-yellow-text"
+          title={t("git.behindCount", { count: behind })}
+        >
+          ↓{behind}
+        </span>
+      )}
+      {(ahead ?? 0) > 0 && (
+        <span
+          className="rounded bg-status-green-background/40 px-1 text-caption-2-medium tabular-nums text-status-green-text"
+          title={t("git.aheadCount", { count: ahead })}
+        >
+          ↑{ahead}
+        </span>
+      )}
+    </span>
   );
 }
 
@@ -274,9 +438,13 @@ function BranchPicker({
   const filteredBranches = useMemo(() => {
     const q = query.trim().toLowerCase();
     return (branches ?? []).filter(
-      (b) => q.length === 0 || b.name.toLowerCase().includes(q),
+      (b) =>
+        (q.length === 0 || b.name.toLowerCase().includes(q)) ||
+        (b.upstream?.toLowerCase().includes(q) ?? false),
     );
   }, [branches, query]);
+  const localBranches = filteredBranches.filter((b) => !b.isRemote);
+  const remoteBranches = filteredBranches.filter((b) => b.isRemote);
 
   return (
     <div className="flex items-center gap-1">
@@ -330,33 +498,65 @@ function BranchPicker({
               />
             </div>
           </div>
-          {filteredBranches.map((b) => (
-            <DropdownItem
-              key={b.name}
-              selected={b.name === branch}
-              className="px-2 py-1.5"
-              onSelect={() => {
-                onOpenChange(false);
-                // "Current" must come from the same source as the trigger
-                // label (status.branch): the cached list's isCurrent lags
-                // behind external checkouts and would no-op the click.
-                if (b.name !== branch) {
-                  run("checkout", () =>
-                    useGitStore.getState().checkout(workspacePath, b.name),
-                  );
-                }
-              }}
-            >
-              <span className="truncate text-body-medium text-text-primary">
-                {b.name}
-              </span>
-              {b.isRemote && (
-                <span className="ml-auto shrink-0 rounded-md bg-background-secondary-default px-1.5 py-0.5 text-caption-1-regular text-text-tertiary">
-                  {t("git.remoteBranch")}
-                </span>
-              )}
-            </DropdownItem>
-          ))}
+          {localBranches.length > 0 && (
+            <DropdownGroup label={t("git.localBranches")}>
+              {localBranches.map((b) => (
+                <DropdownItem
+                  key={b.name}
+                  selected={b.name === branch}
+                  className="px-2 py-1.5"
+                  onSelect={() => {
+                    onOpenChange(false);
+                    // "Current" must come from the same source as the trigger
+                    // label (status.branch): the cached list's isCurrent lags
+                    // behind external checkouts and would no-op the click.
+                    if (b.name !== branch) {
+                      run("checkout", () =>
+                        useGitStore.getState().checkout(workspacePath, b.name),
+                      );
+                    }
+                  }}
+                >
+                  <span
+                    className="min-w-0 truncate text-body-medium text-text-primary"
+                    title={branchTooltip(b)}
+                  >
+                    {b.name}
+                  </span>
+                  <BranchCounts ahead={b.ahead} behind={b.behind} className="ml-auto" />
+                </DropdownItem>
+              ))}
+            </DropdownGroup>
+          )}
+          {remoteBranches.length > 0 && (
+            <DropdownGroup label={t("git.remoteBranches")}>
+              {remoteBranches.map((b) => (
+                <DropdownItem
+                  key={b.name}
+                  selected={b.name === branch}
+                  className="px-2 py-1.5"
+                  onSelect={() => {
+                    onOpenChange(false);
+                    if (b.name !== branch) {
+                      run("checkout", () =>
+                        useGitStore.getState().checkout(workspacePath, b.name),
+                      );
+                    }
+                  }}
+                >
+                  <span
+                    className="min-w-0 truncate text-body-medium text-text-primary"
+                    title={branchTooltip(b)}
+                  >
+                    {b.name}
+                  </span>
+                  <span className="ml-auto shrink-0 rounded-md bg-background-secondary-default px-1.5 py-0.5 text-caption-1-regular text-text-tertiary">
+                    {t("git.remoteBranch")}
+                  </span>
+                </DropdownItem>
+              ))}
+            </DropdownGroup>
+          )}
           {filteredBranches.length === 0 && (
             <span className="px-2 py-1.5 text-body-medium text-text-tertiary">
               {t("git.noMatchingBranches")}

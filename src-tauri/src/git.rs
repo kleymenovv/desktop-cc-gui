@@ -990,9 +990,16 @@ fn remote_config(repo: &Repository) -> Result<git2::Config, String> {
         // The System level slot is taken once /etc/gitconfig exists; only
         // fill it from Apple's file when libgit2 found no system config.
         if path.exists() && !Path::new("/etc/gitconfig").exists() {
-            config
-                .add_file(path, git2::ConfigLevel::System, false)
-                .map_err(|e| e.to_string())?;
+            match config.add_file(path, git2::ConfigLevel::System, false) {
+                Ok(()) => {}
+                // libgit2 may already have loaded a system config (on stock
+                // macOS it can pick up Apple's CLT file itself). Adding ours
+                // again is redundant, not a failure — surfacing GIT_EEXISTS
+                // here broke fetch/pull/push with "configuration at level 2
+                // already exists" before any network call ran.
+                Err(error) if error.code() == git2::ErrorCode::Exists => {}
+                Err(error) => return Err(error.to_string()),
+            }
         }
     }
     Ok(config)
@@ -1154,20 +1161,26 @@ fn ff_conflicting_files(repo: &Repository, target: git2::Oid) -> Vec<String> {
         .collect()
 }
 
-/// Sync body of `git_pull` (network fetch + merge analysis).
-fn git_pull_blocking(path: &str) -> Result<(), String> {
-    let repo = open_repo(path)?;
-    let branch = current_branch_name(&repo)?;
+/// One fetch + fast-forward of `local_branch` from `remote_name/branch`.
+/// Fast-forward only (a real merge is not implemented in v1): a non-FF
+/// returns a clear error instead of silently doing something unexpected.
+fn fetch_and_ff(
+    repo: &Repository,
+    remote_name: &str,
+    remote_branch: &str,
+    local_branch: &str,
+) -> Result<(), String> {
     // See git_push: normalize a `.git`-less http remote before find_remote
     // caches the URL; the guard restores the original on drop.
-    let _canonical = CanonicalRemoteUrl::new(&repo)?;
+    let _canonical = CanonicalRemoteUrl::new(repo)?;
     let mut remote = repo
-        .find_remote("origin")
-        .map_err(|e| format!("no origin remote: {e}"))?;
-    let config = remote_config(&repo)?;
+        .find_remote(remote_name)
+        .map_err(|e| format!("no {remote_name} remote: {e}"))?;
+    let config = remote_config(repo)?;
     let mut opts = fetch_options(config);
+    let refspec = remote_branch.to_string();
     remote
-        .fetch(std::slice::from_ref(&branch), Some(&mut opts), None)
+        .fetch(std::slice::from_ref(&refspec), Some(&mut opts), None)
         .map_err(map_remote_error)?;
     let fetch_head = repo
         .find_reference("FETCH_HEAD")
@@ -1181,40 +1194,180 @@ fn git_pull_blocking(path: &str) -> Result<(), String> {
     if analysis.is_up_to_date() {
         return Ok(());
     }
-    if analysis.is_fast_forward() {
-        let refname = format!("refs/heads/{branch}");
-        let mut reference = repo.find_reference(&refname).map_err(|e| e.to_string())?;
-        // Safe checkout (no force): a fast-forward must never clobber
-        // uncommitted local edits — report the conflicting files instead.
-        // Keep HEAD at the old tree until checkout succeeds, otherwise local
-        // edits are compared against the new commit and the index is stranded.
-        let target = repo
-            .find_commit(fetch_commit.id())
-            .map_err(|e| e.to_string())?;
-        let mut checkout = git2::build::CheckoutBuilder::new();
-        checkout.safe();
-        if let Err(e) = repo.checkout_tree(target.as_object(), Some(&mut checkout)) {
-            let conflicts = ff_conflicting_files(&repo, fetch_commit.id());
-            return Err(if conflicts.is_empty() {
-                format!("fast-forward checkout failed: {e}")
-            } else {
-                format!(
-                    "pull would overwrite uncommitted changes in: {}",
-                    conflicts.join(", ")
-                )
-            });
-        }
-        reference
-            .set_target(fetch_commit.id(), "fast-forward")
-            .map_err(|e| e.to_string())?;
-        return Ok(());
+    if !analysis.is_fast_forward() {
+        return Err("pull requires a merge; not supported in v1".to_string());
     }
-    Err("pull requires a merge; not supported in v1".to_string())
+    let refname = format!("refs/heads/{local_branch}");
+    let mut reference = repo.find_reference(&refname).map_err(|e| e.to_string())?;
+    // Safe checkout (no force): a fast-forward must never clobber uncommitted
+    // local edits — report the conflicting files instead. Keep HEAD at the old
+    // tree until checkout succeeds, otherwise local edits are compared
+    // against the new commit and the index is stranded.
+    let target = repo
+        .find_commit(fetch_commit.id())
+        .map_err(|e| e.to_string())?;
+    let mut checkout = git2::build::CheckoutBuilder::new();
+    checkout.safe();
+    if let Err(e) = repo.checkout_tree(target.as_object(), Some(&mut checkout)) {
+        let conflicts = ff_conflicting_files(repo, fetch_commit.id());
+        return Err(if conflicts.is_empty() {
+            format!("fast-forward checkout failed: {e}")
+        } else {
+            format!(
+                "pull would overwrite uncommitted changes in: {}",
+                conflicts.join(", ")
+            )
+        });
+    }
+    reference
+        .set_target(fetch_commit.id(), "fast-forward")
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Sync body of `git_pull` (network fetch + merge analysis).
+fn git_pull_blocking(path: &str) -> Result<(), String> {
+    let repo = open_repo(path)?;
+    let branch = current_branch_name(&repo)?;
+    fetch_and_ff(&repo, "origin", &branch, &branch)
 }
 
 #[tauri::command]
 pub async fn git_pull(path: String) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || git_pull_blocking(&path))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+/// Pull the chosen remote branch into the current local branch.
+fn git_pull_from_blocking(path: &str, remote: &str, branch: &str) -> Result<(), String> {
+    let repo = open_repo(path)?;
+    let local = current_branch_name(&repo)?;
+    fetch_and_ff(&repo, remote, branch, &local)
+}
+
+#[tauri::command]
+pub async fn git_pull_from(path: String, remote: String, branch: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || git_pull_from_blocking(&path, &remote, &branch))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+/// Fetch every configured remote (or just `remote`) without merging. Updates
+/// remote-tracking refs so the branch list can show what is new.
+fn git_fetch_blocking(path: &str, only: Option<&str>) -> Result<(), String> {
+    let repo = open_repo(path)?;
+    let _canonical = CanonicalRemoteUrl::new(&repo)?;
+    let names: Vec<String> = match only {
+        Some(name) => vec![name.to_string()],
+        None => repo
+            .remotes()
+            .map_err(|e| e.to_string())?
+            .iter()
+            .flatten()
+            .map(str::to_string)
+            .collect(),
+    };
+    for name in names {
+        let mut remote = repo
+            .find_remote(&name)
+            .map_err(|e| format!("no {name} remote: {e}"))?;
+        let config = remote_config(&repo)?;
+        let mut opts = fetch_options(config);
+        remote
+            .fetch::<&str>(&[], Some(&mut opts), None)
+            .map_err(map_remote_error)?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn git_fetch(path: String, remote: Option<String>) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || git_fetch_blocking(&path, remote.as_deref()))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+/// One commit row for the history graph. Lanes are computed in the frontend
+/// from `parents` — the backend only reports topology.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitCommit {
+    pub id: String,
+    pub short_id: String,
+    pub parents: Vec<String>,
+    pub author: String,
+    /// Epoch seconds.
+    pub time: i64,
+    pub summary: String,
+    /// Branch/tag labels pointing at this commit (`main`, `origin/main`,
+    /// `tag: v1.2`).
+    pub refs: Vec<String>,
+    pub is_head: bool,
+}
+
+fn git_log_blocking(path: &str, limit: usize) -> Result<Vec<GitCommit>, String> {
+    let repo = open_repo(path)?;
+    let limit = limit.clamp(1, 1000);
+    let head_oid = repo.head().ok().and_then(|h| h.target());
+    // oid → labels, so the graph can mark branch/tag tips.
+    let mut labels: HashMap<String, Vec<String>> = HashMap::new();
+    if let Ok(references) = repo.references() {
+        for reference in references.flatten() {
+            let Some(name) = reference.name() else {
+                continue;
+            };
+            let label = if let Some(rest) = name.strip_prefix("refs/heads/") {
+                rest.to_string()
+            } else if let Some(rest) = name.strip_prefix("refs/remotes/") {
+                if rest.ends_with("/HEAD") {
+                    continue;
+                }
+                rest.to_string()
+            } else if let Some(rest) = name.strip_prefix("refs/tags/") {
+                format!("tag: {rest}")
+            } else {
+                continue;
+            };
+            // Annotated tags point at a tag object; label the commit it peels to.
+            let oid = reference
+                .peel_to_commit()
+                .map(|c| c.id())
+                .or_else(|_| reference.target().ok_or_else(|| git2::Error::from_str("no target")))
+                .ok();
+            if let Some(oid) = oid {
+                labels.entry(oid.to_string()).or_default().push(label);
+            }
+        }
+    }
+    let mut walk = repo.revwalk().map_err(|e| e.to_string())?;
+    walk.set_sorting(git2::Sort::TIME)
+        .map_err(|e| e.to_string())?;
+    walk.push_head().map_err(|e| e.to_string())?;
+    let mut out = Vec::new();
+    for oid in walk.flatten().take(limit) {
+        let Ok(commit) = repo.find_commit(oid) else {
+            continue;
+        };
+        let id = oid.to_string();
+        out.push(GitCommit {
+            short_id: id.chars().take(7).collect(),
+            parents: commit.parent_ids().map(|p| p.to_string()).collect(),
+            author: commit.author().name().unwrap_or("").to_string(),
+            time: commit.time().seconds(),
+            summary: commit.summary().unwrap_or("").to_string(),
+            refs: labels.remove(&id).unwrap_or_default(),
+            is_head: head_oid == Some(oid),
+            id,
+        });
+    }
+    Ok(out)
+}
+
+#[tauri::command]
+pub async fn git_log(path: String, limit: Option<usize>) -> Result<Vec<GitCommit>, String> {
+    let limit = limit.unwrap_or(120);
+    tauri::async_runtime::spawn_blocking(move || git_log_blocking(&path, limit))
         .await
         .map_err(|e| e.to_string())?
 }
@@ -1234,12 +1387,33 @@ pub struct BranchInfo {
     /// Remote-tracking branch (`origin/<name>`). Checkout materializes the
     /// local tracking branch instead of detaching HEAD.
     pub is_remote: bool,
+    /// The branch HEAD points at right now (locals only).
+    pub is_current: bool,
+    /// Upstream tracking ref, e.g. `origin/main` (locals only).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub upstream: Option<String>,
+    /// Commits this branch has that its upstream does not (locals only).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ahead: Option<usize>,
+    /// Commits the upstream has that this branch does not (locals only).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub behind: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_commit_subject: Option<String>,
+    /// Epoch seconds of the branch tip.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_commit_time: Option<i64>,
 }
 
 pub(crate) fn git_branches_blocking(path: &str) -> Result<Vec<BranchInfo>, String> {
     let repo = open_repo(path)?;
-    // No is_current flag: consumers compare against the live status branch —
-    // a cached flag here goes stale on external (CLI) checkouts.
+    // No cached current flag on the branch itself: compare against the live
+    // HEAD — a cached flag goes stale on external (CLI) checkouts.
+    let current = repo
+        .head()
+        .ok()
+        .filter(|h| h.is_branch())
+        .and_then(|h| h.shorthand().map(str::to_string));
     let mut out = Vec::new();
     // Locals first, then remote-tracking branches. A branch that only exists
     // on the remote (e.g. right after a fetch) must still be listed: hiding
@@ -1256,12 +1430,50 @@ pub(crate) fn git_branches_blocking(path: &str) -> Result<Vec<BranchInfo>, Strin
             if b.get().target().is_none() {
                 continue;
             }
-            if let Ok(Some(name)) = b.name() {
-                out.push(BranchInfo {
-                    name: name.to_string(),
-                    is_remote: branch_type == git2::BranchType::Remote,
-                });
-            }
+            let Ok(Some(name)) = b.name() else {
+                continue;
+            };
+            let is_local = branch_type == git2::BranchType::Local;
+            let is_current = is_local && current.as_deref() == Some(name);
+            // ahead/behind vs the branch's own upstream, so the picker can
+            // show which branch needs an update and which has unpushed work.
+            let (upstream, ahead, behind) = if is_local {
+                match b.upstream() {
+                    Ok(up) => {
+                        let upstream_name = up.name().ok().flatten().map(str::to_string);
+                        let counts = b
+                            .get()
+                            .target()
+                            .zip(up.get().target())
+                            .and_then(|(local, remote)| repo.graph_ahead_behind(local, remote).ok());
+                        (
+                            upstream_name,
+                            counts.map(|(a, _)| a),
+                            counts.map(|(_, behind)| behind),
+                        )
+                    }
+                    Err(_) => (None, None, None),
+                }
+            } else {
+                (None, None, None)
+            };
+            let (last_commit_subject, last_commit_time) = match b.get().peel_to_commit() {
+                Ok(commit) => (
+                    commit.summary().map(str::to_string),
+                    Some(commit.time().seconds()),
+                ),
+                Err(_) => (None, None),
+            };
+            out.push(BranchInfo {
+                name: name.to_string(),
+                is_remote: !is_local,
+                is_current,
+                upstream,
+                ahead,
+                behind,
+                last_commit_subject,
+                last_commit_time,
+            });
         }
     }
     Ok(out)
@@ -2052,6 +2264,24 @@ mod tests {
         assert!(!helper.trim().is_empty());
     }
 
+    /// `git_fetch` builds one config per remote over the same repository.
+    /// `Repository::config()` hands back a handle that keeps the System slot
+    /// populated, so the second `remote_config` used to fail with
+    /// "configuration at level 2 already exists" and abort the fetch.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn remote_config_is_repeatable_on_the_same_repo() {
+        let apple = Path::new("/Library/Developer/CommandLineTools/usr/share/git-core/gitconfig");
+        if !apple.exists() || Path::new("/etc/gitconfig").exists() {
+            return;
+        }
+        let scratch = Scratch::new();
+        let repo = Repository::init(&scratch.0).unwrap();
+        let _first = remote_config(&repo).unwrap();
+        let _second = remote_config(&repo)
+            .expect("second remote_config on one repo must not raise GIT_EEXISTS");
+    }
+
     #[test]
     fn pull_fast_forward_preserves_unrelated_local_changes() {
         let scratch = Scratch::new();
@@ -2651,5 +2881,55 @@ mod tests {
         commit_file(&repo, "a.txt", "a\n");
         let opened = open_repo(path.to_str().unwrap()).expect("unicode path opens");
         assert!(opened.workdir().is_some());
+    }
+
+    #[test]
+    fn git_log_returns_newest_first_with_parent_links_and_refs() {
+        let scratch = Scratch::new();
+        let repo = Repository::init(&scratch.0).unwrap();
+        commit_file(&repo, "a.txt", "one\n");
+        commit_file(&repo, "b.txt", "two\n");
+        let path = scratch.0.to_string_lossy().to_string();
+        let log = git_log_blocking(&path, 10).unwrap();
+        assert_eq!(log.len(), 2);
+        assert!(log[0].is_head, "newest commit is HEAD");
+        assert_eq!(log[0].parents, vec![log[1].id.clone()]);
+        assert!(
+            log[0].refs.iter().any(|r| r == "main" || r == "master"),
+            "HEAD branch is labelled: {:?}",
+            log[0].refs
+        );
+        assert!(log[1].parents.is_empty(), "root commit has no parent");
+        assert_eq!(log[0].short_id.len(), 7);
+    }
+
+    #[test]
+    fn git_branches_reports_current_upstream_and_ahead_behind() {
+        let scratch = Scratch::new();
+        let repo = Repository::init(&scratch.0).unwrap();
+        commit_file(&repo, "a.txt", "one\n");
+        // Remote-tracking ref + upstream, so the branch carries ahead/behind.
+        repo.remote("origin", "https://example.com/repo.git").unwrap();
+        let head = repo.head().unwrap().peel_to_commit().unwrap();
+        repo.reference("refs/remotes/origin/main", head.id(), true, "test")
+            .unwrap();
+        let local_name = current_branch_name(&repo).unwrap();
+        let mut branch = repo
+            .find_branch(&local_name, git2::BranchType::Local)
+            .unwrap();
+        branch.set_upstream(Some("origin/main")).unwrap();
+        commit_file(&repo, "b.txt", "two\n");
+
+        let path = scratch.0.to_string_lossy().to_string();
+        let branches = git_branches_blocking(&path).unwrap();
+        let local = branches.iter().find(|b| !b.is_remote).unwrap();
+        assert!(local.is_current);
+        assert_eq!(local.upstream.as_deref(), Some("origin/main"));
+        assert_eq!(local.ahead, Some(1));
+        assert_eq!(local.behind, Some(0));
+        assert!(local.last_commit_subject.is_some());
+        assert!(branches
+            .iter()
+            .any(|b| b.is_remote && b.name == "origin/main"));
     }
 }

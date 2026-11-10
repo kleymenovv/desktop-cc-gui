@@ -24,6 +24,8 @@ export type ShortcutSettingKey = keyof Pick<
   | "toggleTerminalShortcut"
   | "toggleSidebarShortcut"
   | "toggleSidePanelShortcut"
+  | "openAgentBoardShortcut"
+  | "nextWaitingAgentShortcut"
   | "saveFileShortcut"
   | "openSettingsShortcut"
   | "increaseUiScaleShortcut"
@@ -90,6 +92,22 @@ export const shortcutActions: ShortcutAction[] = [
     category: "app",
     labelKey: "shortcuts.actions.chatSearch",
     defaultMac: "cmd+f",
+  },
+  {
+    id: "openAgentBoard",
+    setting: "openAgentBoardShortcut",
+    category: "sessions",
+    labelKey: "shortcuts.actions.openAgentBoard",
+    defaultMac: "cmd+shift+a",
+    commandId: "builtin:openAgentBoard",
+  },
+  {
+    id: "nextWaitingAgent",
+    setting: "nextWaitingAgentShortcut",
+    category: "sessions",
+    labelKey: "shortcuts.actions.nextWaitingAgent",
+    defaultMac: "cmd+shift+j",
+    commandId: "builtin:nextWaitingAgent",
   },
   {
     id: "closeTab",

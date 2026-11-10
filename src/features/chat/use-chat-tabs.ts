@@ -7,10 +7,12 @@ import Globe from "lucide-react/dist/esm/icons/globe";
 import LayoutGrid from "lucide-react/dist/esm/icons/layout-grid";
 import Network from "lucide-react/dist/esm/icons/network";
 import Sparkles from "lucide-react/dist/esm/icons/sparkles";
+import SquareKanban from "lucide-react/dist/esm/icons/square-kanban";
 import { BROWSER_TAB_PREFIX, useBrowserStore, type BrowserTab } from "@/features/browser/store";
 import { browserTabLabel } from "@/features/browser/address";
 import { useBetaFeature } from "@/features/settings/beta-features";
 import { MISSION_WORKBENCH_TAB_KEY, useMissionStore } from "@/features/mission/store";
+import { AGENT_BOARD_TAB_KEY, useAgentBoardStore } from "@/features/agent-board/store";
 import { PLUGIN_HUB_TAB_KEY, usePluginHubStore } from "@/features/plugins/hub/store";
 import { centerTabRegistry, useRegistry } from "@ccgui/plugin-sdk";
 import type { LucideIcon } from "lucide-react";
@@ -66,6 +68,8 @@ export interface UseChatTabsResult {
   pluginHubActive: boolean;
   missionOpen: boolean;
   missionActive: boolean;
+  boardOpen: boolean;
+  boardActive: boolean;
   notesOpen: boolean;
   notesActive: boolean;
   diffView: { workspacePath: string; target: DiffTarget } | null;
@@ -144,6 +148,9 @@ export function useChatTabs({
   // 任务工作台中心页签（单实例）：开关与激活态都在 mission store。
   const missionOpen = useMissionStore((s) => s.open);
   const missionActive = useMissionStore((s) => s.active);
+  // Agent board center tab (native single instance).
+  const boardOpen = useAgentBoardStore((s) => s.open);
+  const boardActive = useAgentBoardStore((s) => s.active);
   // 插件中心页签（原生单实例）：侧栏「插件」入口的落地页。
   const hubOpen = usePluginHubStore((s) => s.open);
   const hubActive = usePluginHubStore((s) => s.active);
@@ -307,6 +314,21 @@ export function useChatTabs({
         : [],
     [visibleMissionOpen, t],
   );
+  const boardTabItems = useMemo(
+    () =>
+      boardOpen
+        ? [
+            {
+              key: AGENT_BOARD_TAB_KEY,
+              label: t("agentBoard.title"),
+              title: t("agentBoard.title"),
+              icon: SquareKanban as LucideIcon,
+              streaming: false,
+            },
+          ]
+        : [],
+    [boardOpen, t],
+  );
   // 版本更新说明页签排在最尾：它由更新检查自动弹出，不插到用户自己的页签中间。
   const notesTabItems = useMemo(
     () =>
@@ -333,6 +355,7 @@ export function useChatTabs({
       ...pluginTabItems,
       ...hubTabItems,
       ...missionTabItems,
+      ...boardTabItems,
       ...notesTabItems,
       ...(diffView
         ? [
@@ -346,7 +369,7 @@ export function useChatTabs({
           ]
         : []),
     ],
-    [sessionTabItems, fileTabItems, browserTabItems, pluginTabItems, hubTabItems, missionTabItems, notesTabItems, diffView],
+    [sessionTabItems, fileTabItems, browserTabItems, pluginTabItems, hubTabItems, missionTabItems, boardTabItems, notesTabItems, diffView],
   );
   const activeTabKey = activeCenterTabKey({
     diffView,
@@ -354,6 +377,7 @@ export function useChatTabs({
     activePluginTabId,
     hubActive,
     missionActive: visibleMissionActive,
+    boardActive,
     notesActive,
     activeFilePath,
     active,
@@ -420,6 +444,8 @@ export function useChatTabs({
     pluginHubActive: hubActive,
     missionOpen: visibleMissionOpen,
     missionActive: visibleMissionActive,
+    boardOpen,
+    boardActive,
     notesOpen,
     notesActive,
     diffView,
@@ -440,13 +466,14 @@ interface SessionTabItem {
 
 /** Tab-kind routing shared by select/close/reorder: keys carry a prefix so
  *  each kind lands in its own store. */
-type TabKind = "session" | "file" | "browser" | "plugin" | "hub" | "mission" | "notes";
+type TabKind = "session" | "file" | "browser" | "plugin" | "hub" | "mission" | "board" | "notes";
 
 function tabKindOf(key: string): TabKind {
   if (key.startsWith(BROWSER_TAB_PREFIX)) return "browser";
   if (key.startsWith(PLUGIN_TAB_PREFIX)) return "plugin";
   if (key === PLUGIN_HUB_TAB_KEY) return "hub";
   if (key === MISSION_WORKBENCH_TAB_KEY) return "mission";
+  if (key === AGENT_BOARD_TAB_KEY) return "board";
   if (key === RELEASE_NOTES_TAB_KEY) return "notes";
   if (key.startsWith(FILE_TAB_PREFIX)) return "file";
   return "session";
@@ -462,6 +489,7 @@ function activeCenterTabKey({
   activePluginTabId,
   hubActive,
   missionActive,
+  boardActive,
   notesActive,
   activeFilePath,
   active,
@@ -471,6 +499,7 @@ function activeCenterTabKey({
   activePluginTabId: string | null;
   hubActive: boolean;
   missionActive: boolean;
+  boardActive: boolean;
   notesActive: boolean;
   activeFilePath: string | null;
   active: ActiveSession | null;
@@ -480,6 +509,7 @@ function activeCenterTabKey({
   if (activePluginTabId) return PLUGIN_TAB_PREFIX + activePluginTabId;
   if (hubActive) return PLUGIN_HUB_TAB_KEY;
   if (missionActive) return MISSION_WORKBENCH_TAB_KEY;
+  if (boardActive) return AGENT_BOARD_TAB_KEY;
   if (notesActive) return RELEASE_NOTES_TAB_KEY;
   if (activeFilePath) return FILE_TAB_PREFIX + activeFilePath;
   return active ? sessionKey(active.engine, active.sessionId, active.workspacePath) : null;
@@ -571,6 +601,7 @@ function useChatTabHandlers({
         deactivatePluginTab();
         useMissionStore.getState().deactivate();
         useReleaseNotesTabStore.getState().deactivate();
+        useAgentBoardStore.getState().deactivate();
         usePluginHubStore.getState().activate();
         return;
       }
@@ -580,7 +611,18 @@ function useChatTabHandlers({
         deactivatePluginTab();
         usePluginHubStore.getState().deactivate();
         useReleaseNotesTabStore.getState().deactivate();
+        useAgentBoardStore.getState().deactivate();
         useMissionStore.getState().activate();
+        return;
+      }
+      if (kind === "board") {
+        clearActiveFile();
+        deactivateBrowserTab();
+        deactivatePluginTab();
+        usePluginHubStore.getState().deactivate();
+        useMissionStore.getState().deactivate();
+        useReleaseNotesTabStore.getState().deactivate();
+        useAgentBoardStore.getState().activate();
         return;
       }
       if (kind === "notes") {
@@ -589,10 +631,12 @@ function useChatTabHandlers({
         deactivatePluginTab();
         usePluginHubStore.getState().deactivate();
         useMissionStore.getState().deactivate();
+        useAgentBoardStore.getState().deactivate();
         useReleaseNotesTabStore.getState().activate();
         return;
       }
       useMissionStore.getState().deactivate();
+      useAgentBoardStore.getState().deactivate();
       usePluginHubStore.getState().deactivate();
       useReleaseNotesTabStore.getState().deactivate();
       if (kind === "browser") {
@@ -633,6 +677,10 @@ function useChatTabHandlers({
         useMissionStore.getState().close();
         return;
       }
+      if (kind === "board") {
+        useAgentBoardStore.getState().close();
+        return;
+      }
       if (kind === "notes") {
         useReleaseNotesTabStore.getState().close();
         return;
@@ -665,7 +713,7 @@ function useChatTabHandlers({
       const kind = tabKindOf(draggedKey);
       if (kind !== tabKindOf(targetKey)) return;
       // 任务工作台、插件中心与版本更新说明是单实例页签，不参与拖拽排序。
-      if (kind === "mission" || kind === "hub" || kind === "notes") return;
+      if (kind === "mission" || kind === "board" || kind === "hub" || kind === "notes") return;
       if (kind === "browser") {
         const draggedId = draggedKey.slice(BROWSER_TAB_PREFIX.length);
         const targetId = targetKey.slice(BROWSER_TAB_PREFIX.length);
@@ -709,6 +757,7 @@ function useChatTabHandlers({
       const keysSet = new Set(keysToClose);
       if (keysSet.has(DIFF_TAB_KEY)) closeDiff();
       if (keysSet.has(MISSION_WORKBENCH_TAB_KEY)) useMissionStore.getState().close();
+      if (keysSet.has(AGENT_BOARD_TAB_KEY)) useAgentBoardStore.getState().close();
       if (keysSet.has(PLUGIN_HUB_TAB_KEY)) usePluginHubStore.getState().close();
       if (keysSet.has(RELEASE_NOTES_TAB_KEY)) useReleaseNotesTabStore.getState().close();
       for (const item of sessionTabItems) {

@@ -5,6 +5,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   refresh: vi.fn<(workspacePath: string, force?: boolean) => Promise<void>>(),
   pull: vi.fn<(workspacePath: string) => Promise<void>>(),
+  pullFrom:
+    vi.fn<(workspacePath: string, remote: string, branch: string) => Promise<void>>(),
   push: vi.fn<(workspacePath: string) => Promise<void>>(),
   loadBranches: vi.fn<(workspacePath: string) => Promise<void>>(),
   checkout: vi.fn<(workspacePath: string, branch: string) => Promise<void>>(),
@@ -17,6 +19,7 @@ vi.mock("./store", () => ({
     getState: () => ({
       refresh: mocks.refresh,
       pull: mocks.pull,
+      pullFrom: mocks.pullFrom,
       push: mocks.push,
       loadBranches: mocks.loadBranches,
       checkout: mocks.checkout,
@@ -47,6 +50,7 @@ describe("ChangesPanelHeader refresh feedback", () => {
     vi.useFakeTimers();
     mocks.refresh.mockReset();
     mocks.pull.mockReset();
+    mocks.pullFrom.mockReset();
     mocks.push.mockReset();
     mocks.loadBranches.mockReset();
     mocks.loadBranches.mockResolvedValue(undefined);
@@ -183,26 +187,35 @@ describe("ChangesPanelHeader refresh feedback", () => {
     expect(arrowRestored()).toBe(true);
   });
 
-  it("flashes a check on the pull button right after a successful pull", async () => {
+  it("flashes a check on the pull button after pulling the chosen upstream", async () => {
     const pending = deferred();
-    mocks.pull.mockReturnValue(pending.promise);
-    await render();
+    mocks.pullFrom.mockReturnValue(pending.promise);
+    await render([{ name: "main", isRemote: false, upstream: "origin/main" }]);
 
-    const button = container.querySelector<HTMLButtonElement>(
+    const trigger = container.querySelector<HTMLButtonElement>(
       'button[aria-label="拉取"]',
     )!;
-    act(() => button.click());
+    act(() => trigger.click());
+
+    // Pull is a menu now: the current upstream is the default source.
+    const item = [
+      ...document.body.querySelectorAll<HTMLButtonElement>("button"),
+    ].find((b) => b.textContent?.includes("origin/main"))!;
+    expect(item).toBeTruthy();
+    await act(async () => item.click());
+    expect(mocks.pullFrom).toHaveBeenCalledWith(WS, "origin", "main");
+
     // No spin for cloud icons: the cloud stays put while the pull runs.
     expect(container.querySelector(".animate-refresh-spin")).toBeNull();
-    expect(button.querySelector(".lucide-check.opacity-100")).toBeNull();
+    expect(trigger.querySelector(".lucide-check.opacity-100")).toBeNull();
 
     await act(async () => pending.resolve());
     // Without a spin lap to finish, the check lands immediately.
     act(() => vi.advanceTimersByTime(0));
-    expect(button.querySelector(".lucide-check.opacity-100")).not.toBeNull();
+    expect(trigger.querySelector(".lucide-check.opacity-100")).not.toBeNull();
 
     act(() => vi.advanceTimersByTime(1000));
-    expect(button.querySelector(".lucide-check.opacity-100")).toBeNull();
+    expect(trigger.querySelector(".lucide-check.opacity-100")).toBeNull();
   });
 
   it("shows no check on the push button when the push fails", async () => {

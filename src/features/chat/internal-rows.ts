@@ -1,5 +1,6 @@
 import { en } from "@/i18n/en";
 import { ko } from "@/i18n/ko";
+import { ru } from "@/i18n/ru";
 import { zh } from "@/i18n/zh";
 import type { Message } from "@/lib/ipc";
 
@@ -14,6 +15,7 @@ const RESUME_TEXTS: readonly string[] = [
   zh.chat.autoCompactResume,
   en.chat.autoCompactResume,
   ko.chat.autoCompactResume,
+  ru.chat.autoCompactResume,
 ];
 
 /** True for the compaction command row. It stays visible — as one grey line —

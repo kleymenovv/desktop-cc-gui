@@ -6,6 +6,7 @@ import { usePluginHubStore } from "@/features/plugins/hub/store";
 import { usePluginTabsStore } from "@/features/plugins/runtime/center-tabs";
 import { useChatStore } from "@/features/chat/store";
 import { useReleaseNotesTabStore } from "@/features/update/notes-tab";
+import { useAgentBoardStore } from "@/features/agent-board/store";
 import {
   ipc,
   type DirEntry,
@@ -269,6 +270,7 @@ function dismissNonFileSurfaces() {
   usePluginTabsStore.getState().deactivate();
   usePluginHubStore.getState().deactivate();
   useMissionStore.getState().deactivate();
+  useAgentBoardStore.getState().deactivate();
   useReleaseNotesTabStore.getState().deactivate();
 }
 

@@ -2,6 +2,7 @@ import { useBrowserStore } from "@/features/browser/store";
 import { useFilesStore } from "@/features/files/store";
 import { useGitStore } from "@/features/git/store";
 import { useMissionStore } from "@/features/mission/store";
+import { useAgentBoardStore } from "@/features/agent-board/store";
 import { usePluginHubStore } from "@/features/plugins/hub/store";
 import { usePluginTabsStore } from "@/features/plugins/runtime/center-tabs";
 import { useReleaseNotesTabStore } from "@/features/update/notes-tab";
@@ -24,5 +25,6 @@ export function dismissCenterSurfaces(): void {
   usePluginTabsStore.getState().deactivate();
   usePluginHubStore.getState().deactivate();
   useMissionStore.getState().deactivate();
+  useAgentBoardStore.getState().deactivate();
   useReleaseNotesTabStore.getState().deactivate();
 }

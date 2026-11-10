@@ -4,6 +4,7 @@ import { dismissCenterSurfaces } from "@/features/chat/center-surfaces";
 import { useShortcutsStore } from "@/features/shortcuts/store";
 import { usePluginHubStore } from "@/features/plugins/hub/store";
 import { useReleaseNotesTabStore } from "@/features/update/notes-tab";
+import { focusNextWaitingAgent, openAgentBoard } from "@/features/agent-board/actions";
 
 /**
  * Builtin palette commands, registered through the same commandRegistry the
@@ -67,6 +68,20 @@ commandRegistry.register({
     window.location.hash = "#/";
     dismissCenterSurfaces();
     useReleaseNotesTabStore.getState().openTab();
+  },
+});
+commandRegistry.register({
+  id: "builtin:openAgentBoard",
+  title: () => i18n.t("commands.openAgentBoard"),
+  keywords: keywords("commands.openAgentBoardKeywords"),
+  run: openAgentBoard,
+});
+commandRegistry.register({
+  id: "builtin:nextWaitingAgent",
+  title: () => i18n.t("commands.nextWaitingAgent"),
+  keywords: keywords("commands.nextWaitingAgentKeywords"),
+  run: () => {
+    focusNextWaitingAgent();
   },
 });
 commandRegistry.register({

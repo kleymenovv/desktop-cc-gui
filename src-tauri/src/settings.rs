@@ -163,6 +163,10 @@ pub struct AppSettings {
     pub toggle_sidebar_shortcut: Option<String>,
     #[serde(default = "default_toggle_side_panel_shortcut")]
     pub toggle_side_panel_shortcut: Option<String>,
+    #[serde(default = "default_open_agent_board_shortcut")]
+    pub open_agent_board_shortcut: Option<String>,
+    #[serde(default = "default_next_waiting_agent_shortcut")]
+    pub next_waiting_agent_shortcut: Option<String>,
     #[serde(default = "default_save_file_shortcut")]
     pub save_file_shortcut: Option<String>,
     #[serde(default = "default_open_settings_shortcut")]
@@ -313,6 +317,12 @@ fn default_toggle_sidebar_shortcut() -> Option<String> {
 fn default_toggle_side_panel_shortcut() -> Option<String> {
     Some("cmd+shift+e".to_string())
 }
+fn default_open_agent_board_shortcut() -> Option<String> {
+    Some("cmd+shift+a".to_string())
+}
+fn default_next_waiting_agent_shortcut() -> Option<String> {
+    Some("cmd+shift+j".to_string())
+}
 fn default_save_file_shortcut() -> Option<String> {
     Some("cmd+s".to_string())
 }
@@ -437,6 +447,8 @@ impl Default for AppSettings {
             toggle_terminal_shortcut: default_toggle_terminal_shortcut(),
             toggle_sidebar_shortcut: default_toggle_sidebar_shortcut(),
             toggle_side_panel_shortcut: default_toggle_side_panel_shortcut(),
+            open_agent_board_shortcut: default_open_agent_board_shortcut(),
+            next_waiting_agent_shortcut: default_next_waiting_agent_shortcut(),
             save_file_shortcut: default_save_file_shortcut(),
             open_settings_shortcut: default_open_settings_shortcut(),
             increase_ui_scale_shortcut: default_increase_ui_scale_shortcut(),

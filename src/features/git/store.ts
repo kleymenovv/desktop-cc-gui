@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { ipc, type BranchInfo, type GitStatus } from "@/lib/ipc";
+import { ipc, type BranchInfo, type GitCommit, type GitStatus } from "@/lib/ipc";
 import { errorText } from "@/lib/errors";
 
 const TTL_MS = 30_000;
@@ -27,6 +27,8 @@ interface GitStore {
   notRepoByWorkspace: Record<string, boolean>;
   errorByWorkspace: Record<string, string | null>;
   branchesByWorkspace: Record<string, BranchInfo[] | undefined>;
+  /** Commit topology for the history dialog (newest first). */
+  logByWorkspace: Record<string, GitCommit[] | undefined>;
   /** epoch ms of last successful/failed fetch per workspace (TTL bookkeeping) */
   fetchedAtByWorkspace: Record<string, number>;
   /** Diff open in the center area; null = center shows chat/files. */
@@ -39,6 +41,12 @@ interface GitStore {
   /** Refreshes status; skipped when fetched < 30s ago unless `force`. */
   refresh: (workspacePath: string, force?: boolean) => Promise<void>;
   loadBranches: (workspacePath: string) => Promise<void>;
+  /** Fetch remote refs (all remotes, or one) without merging. */
+  fetch: (workspacePath: string, remote?: string) => Promise<void>;
+  /** Pull a specific remote branch into the current local branch. */
+  pullFrom: (workspacePath: string, remote: string, branch: string) => Promise<void>;
+  /** Load the commit list backing the history graph. */
+  loadLog: (workspacePath: string, limit?: number) => Promise<void>;
 
   // Mutating actions — each force-refreshes status afterwards. Errors are
   // re-thrown so callers can surface them inline.
@@ -91,6 +99,7 @@ export const useGitStore = create<GitStore>((set, get) => {
     notRepoByWorkspace: {},
     errorByWorkspace: {},
     branchesByWorkspace: {},
+    logByWorkspace: {},
     fetchedAtByWorkspace: {},
     diffView: null,
 
@@ -158,6 +167,29 @@ export const useGitStore = create<GitStore>((set, get) => {
       }
     },
 
+    fetch: async (workspacePath, remote) => {
+      await runMutation(workspacePath, () => ipc.gitFetch(workspacePath, remote));
+      await get().loadBranches(workspacePath);
+    },
+
+    pullFrom: async (workspacePath, remote, branch) => {
+      await runMutation(workspacePath, () => ipc.gitPullFrom(workspacePath, remote, branch));
+      await get().loadBranches(workspacePath);
+      get().loadLog(workspacePath).catch(() => undefined);
+    },
+
+    loadLog: async (workspacePath, limit = 160) => {
+      if (get().notRepoByWorkspace[workspacePath]) return;
+      try {
+        const commits = await ipc.gitLog(workspacePath, limit);
+        set((s) => ({ logByWorkspace: { ...s.logByWorkspace, [workspacePath]: commits } }));
+      } catch (err) {
+        if (isNotARepo(err)) {
+          set(notRepoPatch(workspacePath));
+        }
+      }
+    },
+
     stage: (workspacePath, files) =>
       runMutation(workspacePath, () => ipc.gitStage(workspacePath, files)) as Promise<void>,
     unstage: (workspacePath, files) =>
@@ -166,10 +198,16 @@ export const useGitStore = create<GitStore>((set, get) => {
       runMutation(workspacePath, () => ipc.gitDiscard(workspacePath, files)) as Promise<void>,
     commit: (workspacePath, message) =>
       runMutation(workspacePath, () => ipc.gitCommit(workspacePath, message)) as Promise<string>,
-    push: (workspacePath) =>
-      runMutation(workspacePath, () => ipc.gitPush(workspacePath)) as Promise<void>,
-    pull: (workspacePath) =>
-      runMutation(workspacePath, () => ipc.gitPull(workspacePath)) as Promise<void>,
+    push: async (workspacePath) => {
+      await runMutation(workspacePath, () => ipc.gitPush(workspacePath));
+      await get().loadBranches(workspacePath);
+      get().loadLog(workspacePath).catch(() => undefined);
+    },
+    pull: async (workspacePath) => {
+      await runMutation(workspacePath, () => ipc.gitPull(workspacePath));
+      await get().loadBranches(workspacePath);
+      get().loadLog(workspacePath).catch(() => undefined);
+    },
     checkout: async (workspacePath, branch) => {
       await runMutation(workspacePath, () => ipc.gitCheckout(workspacePath, branch));
       await get().loadBranches(workspacePath);

@@ -572,6 +572,8 @@ export interface AppSettings {
   toggleTerminalShortcut?: string | null;
   toggleSidebarShortcut?: string | null;
   toggleSidePanelShortcut?: string | null;
+  openAgentBoardShortcut?: string | null;
+  nextWaitingAgentShortcut?: string | null;
   saveFileShortcut?: string | null;
   openSettingsShortcut?: string | null;
   increaseUiScaleShortcut?: string | null;
@@ -1084,6 +1086,31 @@ export interface BranchInfo {
   /** Remote-tracking branch (`origin/x`): checking it out materializes (or
    *  switches to) the local branch of the same short name. */
   isRemote: boolean;
+  /** HEAD points at this branch right now (locals only). */
+  isCurrent?: boolean;
+  /** Upstream tracking ref, e.g. `origin/main` (locals only). */
+  upstream?: string;
+  /** Commits this branch has that its upstream does not. */
+  ahead?: number;
+  /** Commits the upstream has that this branch does not. */
+  behind?: number;
+  lastCommitSubject?: string;
+  /** Epoch seconds of the branch tip. */
+  lastCommitTime?: number;
+}
+
+/** One commit row for the history graph (Rust `GitCommit`). */
+export interface GitCommit {
+  id: string;
+  shortId: string;
+  parents: string[];
+  author: string;
+  /** Epoch seconds. */
+  time: number;
+  summary: string;
+  /** Branch/tag labels pointing at this commit (`main`, `origin/main`, `tag: v1.2`). */
+  refs: string[];
+  isHead: boolean;
 }
 export interface AppMetrics {
   /** Resident memory of the app process, bytes. */
@@ -1925,6 +1952,15 @@ export const ipc = {
     invoke<string>("git_commit", { path, message }),
   gitPush: (path: string) => invoke<void>("git_push", { path }),
   gitPull: (path: string) => invoke<void>("git_pull", { path }),
+  /** Pull the chosen remote branch into the current local branch. */
+  gitPullFrom: (path: string, remote: string, branch: string) =>
+    invoke<void>("git_pull_from", { path, remote, branch }),
+  /** Fetch all remotes (or just `remote`) without merging. */
+  gitFetch: (path: string, remote?: string) =>
+    invoke<void>("git_fetch", { path, remote: remote ?? null }),
+  /** Commit topology for the history graph (newest first). */
+  gitLog: (path: string, limit?: number) =>
+    invoke<GitCommit[]>("git_log", { path, limit: limit ?? null }),
   gitBranches: (path: string) => invoke<BranchInfo[]>("git_branches", { path }),
   gitCheckout: (path: string, branch: string) =>
     invoke<void>("git_checkout", { path, branch }),

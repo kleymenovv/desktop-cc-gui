@@ -32,6 +32,8 @@ export const useShortcutsStore = create<ShortcutsState>((set) => ({
         toggleTerminalShortcut: settings.toggleTerminalShortcut,
         toggleSidebarShortcut: settings.toggleSidebarShortcut,
         toggleSidePanelShortcut: settings.toggleSidePanelShortcut,
+        openAgentBoardShortcut: settings.openAgentBoardShortcut,
+        nextWaitingAgentShortcut: settings.nextWaitingAgentShortcut,
         saveFileShortcut: settings.saveFileShortcut,
         openSettingsShortcut: settings.openSettingsShortcut,
         increaseUiScaleShortcut: settings.increaseUiScaleShortcut,

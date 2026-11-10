@@ -560,6 +560,27 @@ struct GitCommitArgs {
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct GitPullFromArgs {
+    path: String,
+    remote: String,
+    branch: String,
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GitFetchArgs {
+    path: String,
+    #[serde(default)]
+    remote: Option<String>,
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GitLogArgs {
+    path: String,
+    #[serde(default)]
+    limit: Option<usize>,
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct GitCheckoutArgs {
     path: String,
     branch: String,
@@ -1348,6 +1369,18 @@ pub(super) async fn dispatch(
         "git_pull" => {
             let a: PathArgs = parse_args(&raw)?;
             ser(crate::git::git_pull(a.path).await)
+        }
+        "git_pull_from" => {
+            let a: GitPullFromArgs = parse_args(&raw)?;
+            ser(crate::git::git_pull_from(a.path, a.remote, a.branch).await)
+        }
+        "git_fetch" => {
+            let a: GitFetchArgs = parse_args(&raw)?;
+            ser(crate::git::git_fetch(a.path, a.remote).await)
+        }
+        "git_log" => {
+            let a: GitLogArgs = parse_args(&raw)?;
+            ser(crate::git::git_log(a.path, a.limit).await)
         }
         "git_branches" => {
             let a: PathArgs = parse_args(&raw)?;
