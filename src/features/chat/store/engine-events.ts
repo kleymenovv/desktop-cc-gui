@@ -2091,7 +2091,10 @@ export function handleEngineEvents(
       // Every turn funnels through here: drop the computer-use global
       // Esc-to-stop so a system-wide hotkey never outlives its run. Arming
       // is per computer-use send (messaging.ts); the call is idempotent.
-      void ipc.computerUseSetActive?.(false)?.catch(() => {});
+      const otherComputerRun = Object.entries(state.bySession).some(
+        ([candidate, run]) => candidate !== key && run.streaming && run.activeComputerUse,
+      );
+      if (!otherComputerRun) void ipc.computerUseSetActive?.(false)?.catch(() => {});
     }
     if (!isPlanEvent &&
       state.bySession[key]?.settledRunIds?.includes(event.runId)) {

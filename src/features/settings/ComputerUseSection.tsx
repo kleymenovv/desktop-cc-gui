@@ -1,4 +1,6 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import RefreshCw from "lucide-react/dist/esm/icons/refresh-cw";
+import { ActionFeedbackIcon, useActionFeedback } from "@/components/base/action-feedback";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/base/buttons/button";
 import { Chip } from "@/components/base/chips/chip";
@@ -19,8 +21,8 @@ import { engineSupportsComputerUse } from "@/features/chat/computer-use";
  * 设置 → 电脑操控: what the computer-use driver needs, how to grant it, and
  * which engines can receive it.
  *
- * There is deliberately no on/off switch here. A computer-use turn is opt-in
- * per send (`/ccgui-cua <task>` in the composer), never a global mode: the
+ * A computer-use turn is opt-in per send (the composer pointer button or
+ * `/ccgui-cua <task>`), never a global mode: the
  * driver pre-approves machine input, so it must not be reachable from an
  * ordinary message that the user did not mean as a machine command. This
  * page is the setup/status surface that command points at.
@@ -35,19 +37,37 @@ export function ComputerUseSection() {
   const engines = useChatStore((s) => s.engines);
   const [status, setStatus] = useState<ComputerUsePermissionStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const mounted = useRef(false);
+  const request = useRef(0);
+  const refresh = useActionFeedback({ spin: true });
+  const [previewing, setPreviewing] = useState(false);
+  const previewCursor = async () => {
+    if (previewing) return;
+    setPreviewing(true);
+    try { await ipc.computerUsePreviewCursor(); }
+    catch (e) { if (mounted.current) setError(errorText(e)); }
+    finally { if (mounted.current) setPreviewing(false); }
+  };
 
-  const refreshStatus = useCallback(() => {
-    void ipc
-      .computerUsePermissionStatus()
-      .then((next) => {
+  const refreshStatus = useCallback(async () => {
+    if (!mounted.current) return;
+    const sequence = ++request.current;
+    try {
+      const next = await ipc.computerUsePermissionStatus();
+      if (mounted.current && request.current === sequence) {
         setStatus(next);
         setError(null);
-      })
-      .catch((e) => setError(errorText(e)));
+      }
+    } catch (e) {
+      if (mounted.current && request.current === sequence) setError(errorText(e));
+      throw e;
+    }
   }, []);
 
   useEffect(() => {
-    refreshStatus();
+    mounted.current = true;
+    void refreshStatus().catch(() => {});
+    return () => { mounted.current = false; ++request.current; };
   }, [refreshStatus]);
 
   const openPane = useCallback(
@@ -73,6 +93,27 @@ export function ComputerUseSection() {
           {t("common.error")}: {error}
         </p>
       )}
+
+      <div className="flex w-full flex-col gap-2">
+        <SettingsSectionLabel>agent-desktop</SettingsSectionLabel>
+        <SettingsCard>
+          <SettingsRow label={t("settings.computerUseDesktopEngine")}
+            description={t("settings.computerUseDesktopEngineDesc")}>
+            <Chip selected={status?.agentDesktopAvailable === true}>
+              {status ? t(status.agentDesktopAvailable ? "settings.computerUseDesktopReady" : "settings.computerUseDesktopMissing") : t("common.loading")}
+              {status?.agentDesktopAvailable && status.agentDesktopVersion ? ` · ${status.agentDesktopVersion}` : ""}
+            </Chip>
+          </SettingsRow>
+          <SettingsRow label={t("settings.computerUseDesktopLifecycle")}
+            description={t("settings.computerUseDesktopLifecycleDesc")}>
+            <Button variant="secondary" size="small" disabled={refresh.feedback === "running"}
+              onClick={() => { void refresh.start(refreshStatus).catch(() => {}); }}>
+              <ActionFeedbackIcon icon={RefreshCw} feedback={refresh.feedback} spin />
+              {t("settings.computerUseRefresh")}
+            </Button>
+          </SettingsRow>
+        </SettingsCard>
+      </div>
 
       <div className="flex w-full flex-col gap-2">
         <SettingsSectionLabel>{t("settings.computerUsePermissions")}</SettingsSectionLabel>
@@ -133,7 +174,11 @@ export function ComputerUseSection() {
           <SettingsRow
             label={t("settings.computerUseCursor")}
             description={t("settings.computerUseCursorDesc")}
-          />
+          >
+            <Button variant="secondary" size="small" disabled={previewing} onClick={() => void previewCursor()}>
+              {t("settings.computerUsePreviewCursor")}
+            </Button>
+          </SettingsRow>
         </SettingsCard>
       </div>
 

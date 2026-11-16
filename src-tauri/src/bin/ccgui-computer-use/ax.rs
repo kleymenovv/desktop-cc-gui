@@ -429,6 +429,39 @@ mod imp {
         Ok((node.element.0, node.actions))
     }
 
+    fn preview_element(
+        element: AXUIElementRef,
+        kind: &str,
+        text_length: Option<usize>,
+    ) -> Result<(), String> {
+        let bounds = match (
+            point_attr(element, "AXPosition"),
+            size_attr(element, "AXSize"),
+        ) {
+            (Some((x, y)), Some((width, height))) => Some(crate::cu_protocol::TargetBounds {
+                x,
+                y,
+                width,
+                height,
+            }),
+            _ => None,
+        }
+        .filter(|b| b.valid());
+        let (x, y) = bounds
+            .map(|b| (b.x + b.width / 2.0, b.y + b.height / 2.0))
+            .unwrap_or_else(crate::driver::pointer_position);
+        let mut preview = crate::cu_protocol::ActionPreview::new(kind, x, y);
+        preview.bounds = bounds;
+        preview.label = string_attr(element, "AXTitle")
+            .or_else(|| string_attr(element, "AXDescription"))
+            .unwrap_or_default()
+            .chars()
+            .take(80)
+            .collect();
+        preview.text_length = text_length;
+        crate::driver::preview_action(preview)
+    }
+
     pub fn press(state_id: &str, ref_id: usize) -> Result<String, String> {
         let (element, actions) = resolve(state_id, ref_id)?;
         if !actions.contains(&"press") {
@@ -444,6 +477,7 @@ mod imp {
             (Some((x, y)), Some((w, h))) => (x + w / 2.0, y + h / 2.0),
             _ => (0.0, 0.0),
         };
+        preview_element(element, "click", None)?;
         let action = cfstring("AXPress");
         let status = unsafe { AXUIElementPerformAction(element, action) };
         release(action as CFTypeRef);
@@ -452,7 +486,6 @@ mod imp {
                 "AXPress failed (error {status}); fall back to a pixel click"
             ));
         }
-        crate::driver::notify_cursor(cx as i32, cy as i32);
         Ok(format!(
             "Pressed element [{ref_id}] (center {cx:.0},{cy:.0})."
         ))
@@ -466,6 +499,7 @@ mod imp {
                 actions.join(", ")
             ));
         }
+        preview_element(element, "set-value", Some(value.chars().count()))?;
         let attr = cfstring("AXValue");
         let cf_value = cfstring(value);
         let status = unsafe { AXUIElementSetAttributeValue(element, attr, cf_value as CFTypeRef) };

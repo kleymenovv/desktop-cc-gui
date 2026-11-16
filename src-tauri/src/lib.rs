@@ -11,6 +11,7 @@ pub mod computer_use;
 pub mod config;
 pub mod creator_skill;
 pub mod cu_overlay;
+pub mod cu_protocol;
 pub mod db;
 pub mod dsh_host;
 pub mod engine;
@@ -214,6 +215,7 @@ pub fn run() {
             // otherwise every provider mutation panics with "state() called
             // before manage()".
             app.manage(config::ConfigStore::default());
+            computer_use::init_agent_desktop(app.path().resource_dir()?);
             // Virtual cursor overlay + its loopback control channel: the
             // ccgui-computer-use helper posts action targets here so the
             // blue pointer can follow the agent.
@@ -343,6 +345,16 @@ pub fn run() {
             {
                 eprintln!("[window] restore failed, showing default window: {error}");
                 let _ = main_window.show();
+            }
+            // Explicit non-input visual smoke check for local builds/support.
+            if std::env::args().any(|arg| arg == "--show-computer-cursor") {
+                let handle = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    match cu_overlay::computer_use_preview_cursor(handle).await {
+                        Ok(()) => eprintln!("[cu-overlay] visual preview ready"),
+                        Err(error) => eprintln!("[cu-overlay] visual preview failed: {error}"),
+                    }
+                });
             }
             // Replace the automatic macOS menu with the same one minus its
             // Close Window (⌘W) item; the frontend shortcut runtime owns that
@@ -500,6 +512,7 @@ pub fn run() {
             clipboard::clipboard_set_file_paths,
             // computer use
             computer_use::computer_use_permission_status,
+            cu_overlay::computer_use_preview_cursor,
             computer_use::computer_use_open_permission_settings,
             computer_use::computer_use_set_active,
             // MCP inventory (设置 → 能力扩展 → MCP); desktop-only — the

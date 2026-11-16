@@ -4,9 +4,9 @@
   "version": "1.2.2",
   "identifier": "com.zhukunpenglinyutong.ccgui",
   "build": {
-    "beforeDevCommand": "node scripts/dev-frontend.mjs",
+    "beforeDevCommand": "node scripts/prepare-agent-desktop.mjs && node scripts/dev-frontend.mjs",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "npm run build",
+    "beforeBuildCommand": "node scripts/prepare-agent-desktop.mjs && npm run build",
     "frontendDist": "../dist"
   },
   "app": {
@@ -33,7 +33,9 @@
     "active": true,
     "resources": {
       "resources/agent-catalogs": "agent-catalogs",
-      "resources/skills": "skills"
+      "resources/skills": "skills",
+      "resources/agent-desktop": "agent-desktop",
+      "resources/licenses": "licenses"
     },
     "createUpdaterArtifacts": true,
     "targets": "all",

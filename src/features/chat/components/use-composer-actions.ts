@@ -1,4 +1,4 @@
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useShallow } from "zustand/react/shallow";
 import type { ComposerInputHandle } from "@/components/application/ai-chat/ai-chat-composer";
@@ -37,6 +37,11 @@ export function useComposerActions({
   const { t } = useTranslation();
   const pendingMention = useChatStore((s) => s.pendingMention);
   const engines = useChatStore((s) => s.engines);
+  // Explicit, one-message permission. Never survives a tab/engine switch or
+  // app restart; queued messages capture their own flag when submitted.
+  const [computerUseTarget, setComputerUseTarget] = useState<string | null>(null);
+  const computerUseArmed = computerUseTarget === sessionKey && computerUseTarget !== null;
+  useEffect(() => setComputerUseTarget(null), [sessionKey, active?.engine]);
   const {
     setDraft,
     clearPendingMention,
@@ -59,6 +64,13 @@ export function useComposerActions({
     })),
   );
 
+  const toggleComputerUse = useCallback(() => {
+    if (!active) return;
+    const refusal = computerUseRefusalKey(engines, active.engine);
+    if (refusal) { setSessionError(sessionKey, t(refusal)); return; }
+    setComputerUseTarget((current) => current === sessionKey ? null : sessionKey);
+  }, [active, engines, sessionKey, setSessionError, t]);
+
   const submit = useCallback(
     (value: string) => {
       if (!active || (!value.trim() && images.length === 0)) return;
@@ -69,6 +81,10 @@ export function useComposerActions({
         images.length === 0
           ? parseAppCommand(value, active.workspacePath)
           : null;
+      if (computerUseArmed && !appCommand) {
+        const refusal = computerUseRefusalKey(engines, active.engine);
+        if (refusal) { setSessionError(sessionKey, t(refusal)); return; }
+      }
       if (appCommand?.command === "cua") {
         // A web-access client cannot drive this machine at all; say so even
         // for the bare form instead of opening a settings page it can't use.
@@ -88,6 +104,7 @@ export function useComposerActions({
           return;
         }
         recordPrompt(value);
+        setComputerUseTarget(null);
         setDraft(sessionKey, "");
         clearImages();
         // The task rides the queue with its flag, so a drained turn still
@@ -118,15 +135,17 @@ export function useComposerActions({
         useMcpPanel.getState().openPanel();
         return;
       }
+      const options = computerUseArmed ? { computerUse: true } : undefined;
+      setComputerUseTarget(null);
       // A turn is in flight: park the message in the session's queue; the
       // store drains it FIFO when the turn ends.
       if (streaming) {
-        queueMessage(value, images, undefined, active);
+        queueMessage(value, images, options, active);
         return;
       }
-      void send(value, images, undefined, active);
+      void send(value, images, options, active);
     },
-    [active, images, streaming, sessionKey, setDraft, clearImages, send, queueMessage, startNewChat, compactContext, engines, setSessionError, t],
+    [active, images, streaming, sessionKey, setDraft, clearImages, send, queueMessage, startNewChat, compactContext, engines, setSessionError, t, computerUseArmed],
   );
 
   // 文件树「+」的 pendingMention 是全局信号：分屏时只有当前聚焦那一栏（就是
@@ -197,6 +216,8 @@ export function useComposerActions({
   );
 
   return {
+    computerUseArmed,
+    toggleComputerUse,
     submit,
     handleDraftChange,
     handleAddAttachments,

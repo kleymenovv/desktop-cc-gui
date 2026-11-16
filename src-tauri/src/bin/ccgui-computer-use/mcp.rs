@@ -9,9 +9,9 @@ use enigo::Button;
 use xcap::Monitor;
 
 use crate::driver::{
-    action_click, action_drag, action_key, action_move, action_scroll, action_type,
-    capture_frame, display_info_of, require_accessibility, require_screen_recording,
-    screen_recording_granted, DisplayInfo,
+    action_click, action_drag, action_key, action_move, action_scroll, action_type, capture_frame,
+    display_info_of, require_accessibility, require_screen_recording, screen_recording_granted,
+    DisplayInfo,
 };
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::model::{
@@ -225,10 +225,39 @@ pub(crate) fn run_sequence_step(
 }
 
 #[derive(Clone, Default)]
-struct ComputerUseServer;
+struct ComputerUseServer {
+    desktop: std::sync::Arc<crate::agent_desktop::AgentDesktop>,
+}
 
 #[tool_router]
 impl ComputerUseServer {
+    #[tool(
+        description = "Prepare three colored desktop cursors and a shared isolated session in ONE call. Use when the user requests multiple desktop agents. Returns team_id plus agent-1/agent-2/agent-3; then delegate independent subtasks concurrently with your engine's subagent tool, passing BOTH team_id and agent_id on each desktop call. Does not itself spawn model agents. No shell setup or manual overlay configuration is needed."
+    )]
+    async fn prepare_desktop_team(&self) -> Result<CallToolResult, McpError> {
+        let value = self.desktop.prepare_team().await.map_err(tool_error)?;
+        Ok(CallToolResult::success(vec![ContentBlock::text(
+            value.to_string(),
+        )]))
+    }
+
+    #[tool(
+        description = "Operate desktop apps through agent-desktop's accessibility tree. Prefer snapshot (optionally app/window_id), then click/type/set-value using its qualified refs; find locates named controls, get verifies results. Faster and more precise than screenshots when controls expose accessibility. The authorized turn prewarms its isolated session. For parallel work call prepare_desktop_team once and pass the returned team_id and agent_id on every worker call. Preserve upstream errors: repeat actions only when disposition.retry is safe. Use existing screenshot/coordinate tools for canvas or unsupported controls. Physical input requires physical=true explicitly."
+    )]
+    async fn desktop(
+        &self,
+        Parameters(params): Parameters<crate::agent_desktop::DesktopParams>,
+    ) -> Result<CallToolResult, McpError> {
+        require_accessibility().map_err(tool_error)?;
+        let value = self.desktop.execute(params).await.map_err(tool_error)?;
+        let failed = value["ok"] == false;
+        let content = vec![ContentBlock::text(value.to_string())];
+        Ok(if failed {
+            CallToolResult::error(content)
+        } else {
+            CallToolResult::success(content)
+        })
+    }
     #[tool(
         description = "Capture a screenshot of a display. Returns a JPEG image; every coordinate used by the other tools is in this image's pixels."
     )]
@@ -256,16 +285,16 @@ impl ComputerUseServer {
     fn list_displays(&self) -> Result<CallToolResult, McpError> {
         let monitors = Monitor::all().map_err(|e| tool_error(format!("list monitors: {e}")))?;
         let infos: Vec<DisplayInfo> = monitors.iter().map(display_info_of).collect();
-        let text =
-            serde_json::to_string_pretty(&infos).map_err(|e| tool_error(e.to_string()))?;
+        let text = serde_json::to_string_pretty(&infos).map_err(|e| tool_error(e.to_string()))?;
         Ok(CallToolResult::success(vec![ContentBlock::text(text)]))
     }
 
     #[tool(description = "Move the mouse cursor to a point, in screenshot pixels.")]
-    fn mouse_move(
+    async fn mouse_move(
         &self,
         Parameters(params): Parameters<PointParams>,
     ) -> Result<CallToolResult, McpError> {
+        let _input = self.desktop.exclusive_input().await.map_err(tool_error)?;
         let message = action_move(params.x, params.y, params.display_id).map_err(tool_error)?;
         Ok(CallToolResult::success(vec![ContentBlock::text(message)]))
     }
@@ -273,10 +302,11 @@ impl ComputerUseServer {
     #[tool(
         description = "Left-click at a point (screenshot pixels), or at the current cursor position when x/y are omitted."
     )]
-    fn left_click(
+    async fn left_click(
         &self,
         Parameters(params): Parameters<OptionalPointParams>,
     ) -> Result<CallToolResult, McpError> {
+        let _input = self.desktop.exclusive_input().await.map_err(tool_error)?;
         let message = action_click(
             Button::Left,
             "Left",
@@ -292,10 +322,11 @@ impl ComputerUseServer {
     #[tool(
         description = "Right-click at a point (screenshot pixels), or at the current cursor position when x/y are omitted."
     )]
-    fn right_click(
+    async fn right_click(
         &self,
         Parameters(params): Parameters<OptionalPointParams>,
     ) -> Result<CallToolResult, McpError> {
+        let _input = self.desktop.exclusive_input().await.map_err(tool_error)?;
         let message = action_click(
             Button::Right,
             "Right",
@@ -311,10 +342,11 @@ impl ComputerUseServer {
     #[tool(
         description = "Middle-click at a point (screenshot pixels), or at the current cursor position when x/y are omitted."
     )]
-    fn middle_click(
+    async fn middle_click(
         &self,
         Parameters(params): Parameters<OptionalPointParams>,
     ) -> Result<CallToolResult, McpError> {
+        let _input = self.desktop.exclusive_input().await.map_err(tool_error)?;
         let message = action_click(
             Button::Middle,
             "Middle",
@@ -330,10 +362,11 @@ impl ComputerUseServer {
     #[tool(
         description = "Double-click at a point (screenshot pixels), or at the current cursor position when x/y are omitted."
     )]
-    fn double_click(
+    async fn double_click(
         &self,
         Parameters(params): Parameters<OptionalPointParams>,
     ) -> Result<CallToolResult, McpError> {
+        let _input = self.desktop.exclusive_input().await.map_err(tool_error)?;
         let message = action_click(
             Button::Left,
             "Double",
@@ -349,10 +382,11 @@ impl ComputerUseServer {
     #[tool(
         description = "Drag with the left button from one point to another (screenshot pixels)."
     )]
-    fn drag(
+    async fn drag(
         &self,
         Parameters(params): Parameters<DragParams>,
     ) -> Result<CallToolResult, McpError> {
+        let _input = self.desktop.exclusive_input().await.map_err(tool_error)?;
         let message = action_drag(
             params.from_x,
             params.from_y,
@@ -367,10 +401,11 @@ impl ComputerUseServer {
     #[tool(
         description = "Scroll the mouse wheel, optionally hovering a point first (screenshot pixels). Positive delta_y scrolls content down."
     )]
-    fn scroll(
+    async fn scroll(
         &self,
         Parameters(params): Parameters<ScrollParams>,
     ) -> Result<CallToolResult, McpError> {
+        let _input = self.desktop.exclusive_input().await.map_err(tool_error)?;
         let message = action_scroll(
             params.x,
             params.y,
@@ -385,10 +420,11 @@ impl ComputerUseServer {
     #[tool(
         description = "Type text at the current keyboard focus. Unicode (e.g. Chinese) is supported; this does not click anything first."
     )]
-    fn type_text(
+    async fn type_text(
         &self,
         Parameters(params): Parameters<TypeParams>,
     ) -> Result<CallToolResult, McpError> {
+        let _input = self.desktop.exclusive_input().await.map_err(tool_error)?;
         let message = action_type(&params.text).map_err(tool_error)?;
         action_result(message, params.display_id)
     }
@@ -396,10 +432,11 @@ impl ComputerUseServer {
     #[tool(
         description = "Press a key or key chord: \"enter\", \"tab\", \"esc\", \"backspace\", \"delete\", arrows, \"f1\"-\"f12\", or combos like \"cmd+c\", \"ctrl+shift+t\", \"alt+tab\"."
     )]
-    fn press_key(
+    async fn press_key(
         &self,
         Parameters(params): Parameters<KeyParams>,
     ) -> Result<CallToolResult, McpError> {
+        let _input = self.desktop.exclusive_input().await.map_err(tool_error)?;
         let message = action_key(&params.key).map_err(tool_error)?;
         action_result(message, params.display_id)
     }
@@ -416,37 +453,34 @@ impl ComputerUseServer {
     #[tool(
         description = "Press (click) an accessibility element by ref from get_app_state. Precise and does not depend on pixel coordinates."
     )]
-    fn press_element(
+    async fn press_element(
         &self,
         Parameters(params): Parameters<ElementRefParams>,
     ) -> Result<CallToolResult, McpError> {
+        let _input = self.desktop.exclusive_input().await.map_err(tool_error)?;
         require_accessibility().map_err(tool_error)?;
-        let message =
-            crate::ax::press(&params.state, params.ref_id).map_err(tool_error)?;
+        let message = crate::ax::press(&params.state, params.ref_id).map_err(tool_error)?;
         action_result(message, None)
     }
 
     #[tool(
         description = "Set the value of a text-field element by ref from get_app_state. Writes the value directly — no focusing click, no typing; better than left_click + type_text whenever the field has a ref."
     )]
-    fn set_element_value(
+    async fn set_element_value(
         &self,
         Parameters(params): Parameters<SetValueParams>,
     ) -> Result<CallToolResult, McpError> {
+        let _input = self.desktop.exclusive_input().await.map_err(tool_error)?;
         require_accessibility().map_err(tool_error)?;
-        let message =
-            crate::ax::set_value(&params.state, params.ref_id, &params.value)
-                .map_err(tool_error)?;
+        let message = crate::ax::set_value(&params.state, params.ref_id, &params.value)
+            .map_err(tool_error)?;
         action_result(message, None)
     }
 
     #[tool(
         description = "Wait for the UI to settle (e.g. after opening an app), then take a fresh screenshot."
     )]
-    fn wait(
-        &self,
-        Parameters(params): Parameters<WaitParams>,
-    ) -> Result<CallToolResult, McpError> {
+    fn wait(&self, Parameters(params): Parameters<WaitParams>) -> Result<CallToolResult, McpError> {
         let ms = params.ms.min(10_000);
         std::thread::sleep(Duration::from_millis(ms));
         action_result(format!("Waited {ms} ms."), None)
@@ -454,10 +488,11 @@ impl ComputerUseServer {
     #[tool(
         description = "Execute a batch of actions in one call (clicks, typing, keys, scrolls, drags, waits). Much faster than one tool call per action: the model plans several steps from a single screenshot, and only the final screenshot comes back. Stops at the first failing step."
     )]
-    fn sequence(
+    async fn sequence(
         &self,
         Parameters(params): Parameters<SequenceParams>,
     ) -> Result<CallToolResult, McpError> {
+        let _input = self.desktop.exclusive_input().await.map_err(tool_error)?;
         require_accessibility().map_err(tool_error)?;
         if params.actions.is_empty() {
             return Err(tool_error("actions must not be empty".into()));
@@ -505,9 +540,12 @@ impl ServerHandler for ComputerUseServer {
         info.server_info = implementation;
         info.instructions = Some(
             "These tools see and control the user's real machine. \
-             Loop: screenshot → act → read the returned screenshot. \
+             Use the supplied tools directly; do not inspect repos, write setup scripts, install packages, or configure cursor overlays for routine desktop tasks. \
              Coordinates are always in the pixels of the latest screenshot of the same display. \
-             On macOS, prefer get_app_state over screenshot for app interactions: the tree is \
+             Prefer desktop snapshot/find and ref actions through bundled agent-desktop. \
+             For a user-requested desktop team call prepare_desktop_team ONCE, then delegate independent windows to subagents concurrently; each must pass BOTH team_id and its assigned agent_id. Preparation does not spawn agents. It reads named \
+             applications without moving the system pointer; verify results with snapshot/get. \
+             If it is unavailable, on macOS prefer get_app_state over screenshot: the tree is \
              far cheaper to read and its refs are precise. Use screenshot for whatever the \
              tree does not expose (canvas, custom-drawn UI, web content that hides its DOM). \
              Speed matters: when the next few steps are obvious from the current screen \
@@ -517,7 +555,8 @@ impl ServerHandler for ComputerUseServer {
              screenshot first. \
              If a tool reports a missing OS permission, stop and tell the user to grant it \
              in CC GUI → Settings → Computer Use. \
-             A visible pointer follows every action target on screen: it is drawn by CC GUI \
+             A visible pointer, target outline and key badges appear before input; a failed \
+             preview stops the action before input is sent. They are drawn by CC GUI \
              itself, is always on while these tools run, and cannot be hidden or disabled \
              through the tool surface. Do not call attention to it or treat it as page content; \
              never try to click it, move it away, or work around it."
@@ -535,16 +574,30 @@ pub fn serve_stdio() -> Result<(), String> {
         .build()
         .map_err(|e| format!("start MCP runtime: {e}"))?;
     runtime.block_on(async {
-        let server = ComputerUseServer
+        let handler = ComputerUseServer::default();
+        let desktop = handler.desktop.clone();
+        let server = handler
             .serve(rmcp::transport::stdio())
             .await
             .map_err(|e| format!("MCP initialize: {e}"))?;
         crate::driver::notify_session(true);
+        // Preparation overlaps model planning, after the user's authorized
+        // MCP connection exists. It creates private state, not a desktop scan.
+        let warming = desktop.clone();
+        let warmup = tokio::spawn(async move {
+            if let Err(error) = warming.warmup().await {
+                eprintln!("[computer-use] warmup: {error}");
+            }
+        });
         let result = server
             .waiting()
             .await
             .map_err(|e| format!("MCP serve: {e}"));
-        crate::driver::notify_session(false);
+        warmup.abort();
+        let _ = warmup.await;
+        if !desktop.borrows_team() {
+            crate::driver::notify_session(false);
+        }
         result.map(|_| ())
     })
 }

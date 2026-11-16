@@ -1,4 +1,5 @@
 import { normalizeOmpServiceTier } from "@/lib/omp-service-tier";
+import { interruptComputerUseRuns } from "../computer-use";
 import {
   ipc,
   type EngineInfo,
@@ -161,7 +162,7 @@ export function createSessionActions(
         // only while a run is active, so this fires exactly when the user
         // needs the escape hatch out of a machine-driving turn.
         subscribeTauriEvent(() =>
-          listenComputerUseEscape(() => void get().interrupt()),
+          listenComputerUseEscape(() => interruptComputerUseRuns(get())),
         ),
       );
       // Settings' CLI enable switch / channel edits: re-filter history and

@@ -334,6 +334,12 @@ export function createMessagingActions(
         responseCheck: null,
       },
     );
+    if (options?.computerUse) {
+      // Arm the global Esc-to-stop for this run: the escape hatch out of a
+      // machine-driving turn. Disarmed when the turn settles (onDone / a
+      // failed spawn), so the system-wide hotkey never outlives the run.
+      void ipc.computerUseSetActive?.(true)?.catch(() => {});
+    }
     // A pending switch prepares its handoff in beforeSwitch, which must run
     // before the turn's contributions are collected so the first target turn
     // carries the handoff (and not the second one).
@@ -392,12 +398,6 @@ export function createMessagingActions(
     void reapOrphanedRuns(set, routeRun(requestedRunId, key));
     if (agentResolveError) {
       patchSession(set, key, { error: agentResolveError });
-    }
-    if (options?.computerUse) {
-      // Arm the global Esc-to-stop for this run: the escape hatch out of a
-      // machine-driving turn. Disarmed when the turn settles (onDone / a
-      // failed spawn), so the system-wide hotkey never outlives the run.
-      void ipc.computerUseSetActive?.(true)?.catch(() => {});
     }
     try {
       // Read-only launch observation, after the lifecycle registration so a
@@ -638,7 +638,10 @@ export function createMessagingActions(
       untrackRun(requestedRunId);
       dropRunUsage(requestedRunId);
       if (options?.computerUse) {
-        void ipc.computerUseSetActive?.(false)?.catch(() => {});
+        const otherComputerRun = Object.entries(get().bySession).some(
+          ([candidate, run]) => candidate !== failedKey && run.streaming && run.activeComputerUse,
+        );
+        if (!otherComputerRun) void ipc.computerUseSetActive?.(false)?.catch(() => {});
       }
       set((s) => ({
         streamingByKey: setStreamingFlag(s.streamingByKey, failedKey, false),
@@ -729,6 +732,11 @@ export function createMessagingActions(
         retryingByKey: setRetryingFlag(s.retryingByKey, key, false),
       };
     });
+    // Stop must also dismiss preparation when hooks were cancelled before
+    // an engine run existed (there will be no terminal engine event).
+    if (!Object.values(get().bySession).some((session) => session.streaming && session.activeComputerUse)) {
+      void ipc.computerUseSetActive?.(false)?.catch(() => {});
+    }
     // Registry is keyed by native session id once known; before that the
     // run id routes. Try both.
     const sessionId = key.includes("/") ? key.slice(key.indexOf("/") + 1) : "";

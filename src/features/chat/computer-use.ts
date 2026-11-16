@@ -1,5 +1,7 @@
 import type { EngineInfo } from "@/lib/ipc";
 import { isWeb } from "@/lib/platform";
+import type { ChatStore } from "./store/types";
+import { sessionKey } from "./store/persistence";
 
 /**
  * Computer use (电脑操控): frontend helpers shared by the composer's
@@ -45,4 +47,12 @@ export function computerUseRefusalKey(engines: EngineInfo[], engine: string): st
   if (isWeb) return "chat.cuaDesktopOnly";
   if (!engineSupportsComputerUse(engines, engine)) return "chat.cuaUnsupportedEngine";
   return null;
+}
+
+/** Global Escape follows running computer-use owners, including background tabs. */
+export function interruptComputerUseRuns(state: Pick<ChatStore, "openTabs" | "bySession" | "interrupt">): void {
+  for (const tab of state.openTabs) {
+    const run = state.bySession[sessionKey(tab.engine, tab.sessionId, tab.workspacePath)];
+    if (run?.streaming && run.activeComputerUse) void state.interrupt(tab);
+  }
 }

@@ -11,11 +11,13 @@ import type { ComputerUsePermissionStatus } from "@/lib/ipc";
 
 const computerUsePermissionStatus = vi.fn();
 const computerUseOpenPermissionSettings = vi.fn();
+const computerUsePreviewCursor = vi.fn();
 vi.mock("@/lib/ipc", () => ({
   ipc: {
     computerUsePermissionStatus: () => computerUsePermissionStatus(),
     computerUseOpenPermissionSettings: (kind: string) =>
       computerUseOpenPermissionSettings(kind),
+    computerUsePreviewCursor: () => computerUsePreviewCursor(),
   },
 }));
 
@@ -49,6 +51,7 @@ async function render(status: ComputerUsePermissionStatus) {
 beforeEach(() => {
   computerUsePermissionStatus.mockReset();
   computerUseOpenPermissionSettings.mockReset().mockResolvedValue(undefined);
+  computerUsePreviewCursor.mockReset().mockResolvedValue(undefined);
   useChatStore.setState({
     engines: [
       {
@@ -80,6 +83,20 @@ afterEach(() => {
 });
 
 describe("ComputerUseSection", () => {
+  it("previews the pointer only after an explicit click", async () => {
+    await render(MAC_GRANTED);
+    expect(computerUsePreviewCursor).not.toHaveBeenCalled();
+    const button = [...container.querySelectorAll("button")].find((b) => b.textContent?.includes(i18n.t("settings.computerUsePreviewCursor")));
+    expect(button).toBeTruthy();
+    await act(async () => { button!.click(); });
+    expect(computerUsePreviewCursor).toHaveBeenCalledOnce();
+  });
+  it("shows bundled automation readiness and version without launching it", async () => {
+    await render({ ...MAC_GRANTED, agentDesktopAvailable: true, agentDesktopVersion: "1.2.0" });
+    expect(container.textContent).toContain("1.2.0");
+    expect(container.textContent).toContain(i18n.t("settings.computerUseDesktopReady"));
+    expect(computerUseOpenPermissionSettings).not.toHaveBeenCalled();
+  });
   it("reports the real grant state instead of assuming it", async () => {
     await render(MAC_GRANTED);
     const text = container.textContent ?? "";

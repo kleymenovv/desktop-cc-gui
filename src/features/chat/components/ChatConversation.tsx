@@ -23,6 +23,7 @@ import {
 import { MessageTimeline } from "./MessageTimeline";
 import { ConversationFooter } from "./ConversationFooter";
 import { useComposerActions } from "./use-composer-actions";
+import { ComputerUseControl } from "./ComputerUseControl";
 import { filterEngineOptions, orderEngineOptions } from "./engine-options";
 import { useCliNavOrder } from "@/lib/cli-nav-order";
 import { ErrorBanner } from "./ErrorBanner";
@@ -468,6 +469,8 @@ export const ChatConversation = memo(function ChatConversation({
     handleDroppedPaths,
     handleStop,
     handlePickSkills,
+    computerUseArmed,
+    toggleComputerUse,
   } = useComposerActions({
     active,
     sessionKey: key,
@@ -561,7 +564,7 @@ export const ChatConversation = memo(function ChatConversation({
         streaming={streaming}
         noEnabledEngines={noEnabledEngines}
         composerInputRef={composerInputRef}
-        addMenu={addMenu}
+        addMenu={<>{addMenu}<ComputerUseControl sessionKey={key} engine={active?.engine ?? ""} armed={computerUseArmed} onToggle={toggleComputerUse} onStop={handleStop} /></>}
         cliMenu={<>{cliMenu}<ConversationModePicker disabled={!active || streaming || queue.length > 0 || planReviewGate} onSelect={conversationMode.onSelect} /></>}
         permissionMenu={permissionMenu}
         supportsImages={supportsImages}

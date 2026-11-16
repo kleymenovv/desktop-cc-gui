@@ -13,7 +13,10 @@
 // console window on Windows. Pipes are inherited either way.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod agent_desktop;
 mod ax;
+#[path = "../../cu_protocol.rs"]
+mod cu_protocol;
 mod driver;
 mod mcp;
 

@@ -38,7 +38,8 @@ vi.mock("@/lib/events", () => ({
 const WS = "/tmp/ws";
 const { useChatStore } = await import("./store");
 const { sessionKey } = await import("./store/persistence");
-const { engineSupportsComputerUse } = await import("./computer-use");
+const { engineSupportsComputerUse, interruptComputerUseRuns } = await import("./computer-use");
+const { EMPTY_SESSION } = await import("./store/stream");
 
 const KEY = sessionKey("omp", "s-1", WS);
 
@@ -54,6 +55,16 @@ function engine(id: string, supportsComputerUse: boolean): EngineInfo {
 }
 
 describe("engineSupportsComputerUse", () => {
+  it("Escape targets background computer-use turns and leaves ordinary chat alone", () => {
+    const background = { engine: "omp", sessionId: "background", workspacePath: WS };
+    const foreground = { engine: "omp", sessionId: "foreground", workspacePath: WS };
+    const interrupt = vi.fn(async () => {});
+    interruptComputerUseRuns({ openTabs: [foreground, background], interrupt, bySession: {
+      [sessionKey("omp", "foreground", WS)]: { ...EMPTY_SESSION, streaming: true },
+      [sessionKey("omp", "background", WS)]: { ...EMPTY_SESSION, streaming: true, activeComputerUse: true },
+    } });
+    expect(interrupt).toHaveBeenCalledExactlyOnceWith(background);
+  });
   it("reads the engine's own capability flag", () => {
     const engines = [engine("omp", true), engine("codex", false)];
     expect(engineSupportsComputerUse(engines, "omp")).toBe(true);
@@ -95,6 +106,16 @@ describe("computer-use sends", () => {
     expect(vi.mocked(ipc.computerUseSetActive)).toHaveBeenCalledWith(true);
   });
 
+  it("shows preparation before hooks settle and clears it on an early Stop", async () => {
+    const sending = useChatStore.getState().send("打开计算器", [], { computerUse: true });
+    expect(vi.mocked(ipc.computerUseSetActive)).toHaveBeenCalledWith(true);
+    expect(vi.mocked(ipc.sendMessage)).not.toHaveBeenCalled();
+    await useChatStore.getState().interrupt();
+    await sending;
+    expect(vi.mocked(ipc.sendMessage)).not.toHaveBeenCalled();
+    expect(vi.mocked(ipc.computerUseSetActive)).toHaveBeenLastCalledWith(false);
+  });
+
   it("sends an ordinary turn with the flag off", async () => {
     await useChatStore.getState().send("你好", []);
     expect(vi.mocked(ipc.sendMessage)).toHaveBeenCalledWith(
@@ -134,9 +155,13 @@ describe("computer-use sends", () => {
     );
   });
 
-  it("disarms Esc-to-stop when the turn settles", async () => {
+  it.each([false, true])("keeps Esc armed only while another computer-use turn is active: %s", async (otherActive) => {
     await useChatStore.getState().send("打开计算器", [], { computerUse: true });
     vi.mocked(ipc.computerUseSetActive).mockClear();
+    if (otherActive) {
+      const { EMPTY_SESSION } = await import("./store/stream");
+      useChatStore.setState((s) => ({ bySession: { ...s.bySession, other: { ...EMPTY_SESSION, streaming: true, activeComputerUse: true } } }));
+    }
     const { handleEngineEvents } = await import("./store/engine-events");
     handleEngineEvents(
       [
@@ -157,6 +182,7 @@ describe("computer-use sends", () => {
         upsertSessionMeta: () => {},
       },
     );
-    expect(vi.mocked(ipc.computerUseSetActive)).toHaveBeenCalledWith(false);
+    if (otherActive) expect(vi.mocked(ipc.computerUseSetActive)).not.toHaveBeenCalled();
+    else expect(vi.mocked(ipc.computerUseSetActive)).toHaveBeenCalledWith(false);
   });
 });

@@ -202,55 +202,102 @@ fn new_enigo() -> Result<Enigo, String> {
 // ---- Virtual cursor reporting (MCP child → main app) ----
 
 fn control_client() -> Option<(reqwest::blocking::Client, String, String)> {
-    static CLIENT: std::sync::OnceLock<reqwest::blocking::Client> = std::sync::OnceLock::new();
+    static CLIENT: std::sync::OnceLock<Result<reqwest::blocking::Client, String>> =
+        std::sync::OnceLock::new();
     let base = std::env::var("CCGUI_CU_CONTROL").ok()?;
     let token = std::env::var("CCGUI_CU_TOKEN").ok()?;
     Some((
-        CLIENT.get_or_init(reqwest::blocking::Client::new).clone(),
+        // Engine/provider proxy settings must never intercept the GUI's
+        // authenticated loopback control channel.
+        CLIENT
+            .get_or_init(|| {
+                reqwest::blocking::Client::builder()
+                    .no_proxy()
+                    .build()
+                    .map_err(|e| e.to_string())
+            })
+            .as_ref()
+            .ok()?
+            .clone(),
         base,
         token,
     ))
 }
 
-/// Tell the main app's overlay where the next action lands. Fire-and-forget:
-/// loopback is sub-millisecond and a dead channel must never fail an action.
-pub(crate) fn notify_cursor(x: i32, y: i32) {
-    let Some((client, base, token)) = control_client() else {
-        return;
-    };
-    let _ = client
-        .post(format!("{base}/cursor"))
-        .bearer_auth(token)
-        .json(&serde_json::json!({ "x": x, "y": y }))
-        .timeout(Duration::from_millis(250))
-        .send();
-}
-
 /// Session brackets from the MCP child: show the pointer on initialize,
 /// hide it when stdin closes (the engine run is over).
 pub(crate) fn notify_session(active: bool) {
-    let Some((client, base, token)) = control_client() else {
-        return;
-    };
-    let _ = client
-        .post(format!("{base}/session"))
-        .bearer_auth(token)
-        .json(&serde_json::json!({ "active": active }))
-        .timeout(Duration::from_millis(250))
-        .send();
+    let _ = post_control("session", serde_json::json!({ "active": active }));
+}
+
+pub(crate) fn pointer_position() -> (f64, f64) {
+    new_enigo()
+        .and_then(|e| e.location().map_err(|e| e.to_string()))
+        .map(|(x, y)| (x as f64, y as f64))
+        .unwrap_or((24.0, 24.0))
+}
+
+pub(crate) fn preview_action(action: crate::cu_protocol::ActionPreview) -> Result<(), String> {
+    action.validate().map_err(str::to_owned)?;
+    post_control("action", serde_json::to_value(action).map_err(|e| e.to_string())?)
+        .map_err(|_| "CC GUI could not display the action cursor; no input was sent. Stop the turn and reopen CC GUI.".into())
+}
+
+fn preview_at(
+    kind: &str,
+    point: (f64, f64),
+    keys: Option<&str>,
+    text_length: Option<usize>,
+) -> Result<(), String> {
+    let mut action = crate::cu_protocol::ActionPreview::new(kind, point.0, point.1);
+    action.keys = keys.map(str::to_owned);
+    action.text_length = text_length;
+    preview_action(action)
+}
+
+pub(crate) fn preview_team() -> Result<(), String> {
+    post_control("team", serde_json::json!({}))
+}
+
+fn post_control(endpoint: &'static str, payload: serde_json::Value) -> Result<(), String> {
+    if std::env::var_os("CCGUI_CU_CONTROL").is_none() {
+        return Ok(()); // Standalone driver: no GUI host was requested.
+    }
+    // MCP handlers run inside Tokio. reqwest's blocking client must be
+    // constructed AND used outside that runtime, or it panics on first use.
+    // Join the bounded local POST so session-end is delivered before exit.
+    std::thread::Builder::new()
+        .name("cu-overlay-report".into())
+        .spawn(move || {
+            let Some((client, base, token)) = control_client() else {
+                return Err("Cursor control configuration is incomplete".to_string());
+            };
+            client
+                .post(format!("{base}/{endpoint}"))
+                .bearer_auth(token)
+                .json(&payload)
+                .timeout(Duration::from_secs(5))
+                .send()
+                .and_then(reqwest::blocking::Response::error_for_status)
+                .map(|_| ())
+                .map_err(|e| e.to_string())
+        })
+        .map_err(|e| e.to_string())?
+        .join()
+        .map_err(|_| "Cursor reporter failed".to_string())?
 }
 
 fn logical_point(x: f64, y: f64, display_id: Option<u32>) -> Result<(i32, i32), String> {
     let (_, info) = pick_display(display_id)?;
     let (fw, fh) = frame_dims(&info);
     let point = frame_to_logical(x, y, fw, fh, &info);
-    notify_cursor(point.0, point.1);
     Ok(point)
 }
 
 pub(crate) fn action_move(x: f64, y: f64, display_id: Option<u32>) -> Result<String, String> {
     require_accessibility()?;
     let (lx, ly) = logical_point(x, y, display_id)?;
+    preview_at("move", (lx as f64, ly as f64), None, None)?;
     new_enigo()?
         .move_mouse(lx, ly, Coordinate::Abs)
         .map_err(|e| format!("move mouse: {e}"))?;
@@ -267,11 +314,25 @@ pub(crate) fn action_click(
 ) -> Result<String, String> {
     require_accessibility()?;
     let mut enigo = new_enigo()?;
+    let kind = if times > 1 {
+        "double-click"
+    } else if label == "Right" {
+        "right-click"
+    } else {
+        "click"
+    };
     if let (Some(x), Some(y)) = (x, y) {
         let (lx, ly) = logical_point(x, y, display_id)?;
+        preview_at(kind, (lx as f64, ly as f64), None, None)?;
         enigo
             .move_mouse(lx, ly, Coordinate::Abs)
             .map_err(|e| format!("move mouse: {e}"))?;
+    } else {
+        let point = enigo
+            .location()
+            .map(|(x, y)| (x as f64, y as f64))
+            .map_err(|e| e.to_string())?;
+        preview_at(kind, point, None, None)?;
     }
     for _ in 0..times.max(1) {
         enigo
@@ -291,6 +352,7 @@ pub(crate) fn action_drag(
     require_accessibility()?;
     let (sx, sy) = logical_point(from_x, from_y, display_id)?;
     let (ex, ey) = logical_point(to_x, to_y, display_id)?;
+    preview_at("drag", (sx as f64, sy as f64), None, None)?;
     let mut enigo = new_enigo()?;
     enigo
         .move_mouse(sx, sy, Coordinate::Abs)
@@ -324,8 +386,19 @@ pub(crate) fn action_scroll(
 ) -> Result<String, String> {
     require_accessibility()?;
     let mut enigo = new_enigo()?;
-    if let (Some(x), Some(y)) = (x, y) {
-        let (lx, ly) = logical_point(x, y, display_id)?;
+    let target = match (x, y) {
+        (Some(x), Some(y)) => Some(logical_point(x, y, display_id)?),
+        _ => None,
+    };
+    let point = match target {
+        Some((x, y)) => (x as f64, y as f64),
+        None => enigo
+            .location()
+            .map(|(x, y)| (x as f64, y as f64))
+            .map_err(|e| e.to_string())?,
+    };
+    preview_at("scroll", point, None, None)?;
+    if let Some((lx, ly)) = target {
         enigo
             .move_mouse(lx, ly, Coordinate::Abs)
             .map_err(|e| format!("move mouse: {e}"))?;
@@ -352,16 +425,12 @@ const MAX_TYPE_CHARS: usize = 4096;
 
 pub(crate) fn action_type(text: &str) -> Result<String, String> {
     require_accessibility()?;
-    if let Ok(enigo) = new_enigo() {
-        if let Ok((x, y)) = enigo.location() {
-            notify_cursor(x, y);
-        }
-    }
     if text.chars().count() > MAX_TYPE_CHARS {
         return Err(format!(
             "text too long (max {MAX_TYPE_CHARS} chars); split it into multiple type calls"
         ));
     }
+    preview_at("type", pointer_position(), None, Some(text.chars().count()))?;
     new_enigo()?
         .text(text)
         .map_err(|e| format!("type text: {e}"))?;
@@ -444,12 +513,8 @@ pub(crate) fn parse_key_chord(chord: &str) -> Result<(Vec<Key>, Key), String> {
 
 pub(crate) fn action_key(chord: &str) -> Result<String, String> {
     require_accessibility()?;
-    if let Ok(enigo) = new_enigo() {
-        if let Ok((x, y)) = enigo.location() {
-            notify_cursor(x, y);
-        }
-    }
     let (modifiers, key) = parse_key_chord(chord)?;
+    preview_at("key", pointer_position(), Some(chord), None)?;
     let mut enigo = new_enigo()?;
     for modifier in &modifiers {
         enigo

@@ -127,7 +127,7 @@ windows = { version = "0.61", features = [
 # the default browser for open_app/browser.rs. NSEvent::mouseLocation is the
 # pet overlay's cursor read (pet_overlay.rs).
 objc2 = "0.6"
-objc2-app-kit = { version = "0.3", features = ["NSEvent", "NSPasteboard", "NSWorkspace"] }
+objc2-app-kit = { version = "0.3", features = ["NSEvent", "NSPasteboard", "NSWorkspace", "NSWindow"] }
 objc2-foundation = { version = "0.3", features = ["NSEnumerator", "NSURL", "NSString"] }
 
 [dev-dependencies]

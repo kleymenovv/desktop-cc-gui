@@ -91,6 +91,9 @@ importers:
       '@xyflow/react':
         specifier: ^12.11.6
         version: 12.11.6(@types/react-dom@18.3.7(@types/react@18.3.31))(@types/react@18.3.31)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      agent-desktop:
+        specifier: 1.2.0
+        version: 1.2.0
       dompurify:
         specifier: ^3.4.14
         version: 3.4.14
@@ -1931,6 +1934,13 @@ packages:
   agent-base@7.1.4:
     resolution: {integrity: sha512-MnA+YT8fwfJPgBx3m60MNqakm30XOkyIoH1y6huTQvC0PwZG7ki8NacLBcrPbNoo8vEZy7Jpuk7+jMO+CUovTQ==}
     engines: {node: '>= 14'}
+
+  agent-desktop@1.2.0:
+    resolution: {integrity: sha512-sp8hHs8JfnuZe8ZQwiKZrqSOlu26SSeZXkjDog4KsU31L09G3uZJa8pITGN2vORif9uuh0iOSJHD146CEyTqag==}
+    engines: {node: '>=18'}
+    cpu: [arm64, x64]
+    os: [darwin, win32, linux]
+    hasBin: true
 
   agent-install@0.0.5:
     resolution: {integrity: sha512-nHlms9BkP8ZiY79HrwCGiA2DcNaXrAaJrCM/BEqQ7MEsSKyCk+2A76xPGylIfASZSZE0SaU3T0bNSg4rBPIJAQ==}
@@ -5627,6 +5637,8 @@ snapshots:
   acorn@8.18.0: {}
 
   agent-base@7.1.4: {}
+
+  agent-desktop@1.2.0: {}
 
   agent-install@0.0.5:
     dependencies:

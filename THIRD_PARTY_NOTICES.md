@@ -122,3 +122,12 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
+
+---
+
+## agent-desktop
+
+- Upstream: https://github.com/vercel-labs/agent-desktop
+- Version: 1.2.0, pinned in pnpm-lock.yaml.
+- License: Apache-2.0. Full license is redistributed in `src-tauri/resources/licenses/agent-desktop-LICENSE.txt` and the app’s `licenses` resources directory.
+- CC GUI bundles the unmodified native executable and its platform helper for the target architecture. `scripts/prepare-agent-desktop.mjs` verifies the upstream SHA-256 files before staging them. No package install script or runtime download is required.

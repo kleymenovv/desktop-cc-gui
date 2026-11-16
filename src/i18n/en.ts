@@ -406,6 +406,11 @@ export const en: Messages = {
     slashAppMcp: "Show this CLI's MCP servers",
     slashAppCua:
       "Computer use: let the agent see the screen and drive apps (/ccgui-cua <task>)",
+    cuaToggle: "Computer",
+    cuaArmed: "Next message",
+    cuaToggleHint: "Allow computer control for the next message. The agent uses it only when needed; it turns off after sending.",
+    cuaStop: "Stop control",
+    cuaStopHint: "Stop this computer-use turn. Escape also stops control.",
     cuaDesktopOnly:
       "Computer use can only be started on the desktop: remote access cannot capture or drive this computer's screen, keyboard and mouse.",
     cuaUnsupportedEngine:
@@ -1075,6 +1080,13 @@ export const en: Messages = {
     skills: "Skills",
     mcp: "MCP",
     computerUse: "Computer use",
+    computerUseDesktopEngine: "Desktop automation",
+    computerUseDesktopEngineDesc: "Bundled agent-desktop reads app controls and acts on them directly. Screenshot tools handle interfaces that do not expose controls.",
+    computerUseDesktopReady: "Ready",
+    computerUseDesktopMissing: "Unavailable — reinstall CC GUI",
+    computerUseDesktopLifecycle: "Starts when needed",
+    computerUseDesktopLifecycleDesc: "Available only in a computer-use turn. Its isolated session starts on the first desktop tool call and ends with the turn.",
+    computerUseRefresh: "Check status",
     computerUsePermissions: "Permissions",
     computerUseGranted: "Granted",
     computerUseNotGranted: "Not granted",
@@ -1090,8 +1102,8 @@ export const en: Messages = {
     computerUseOpenPane: "Open System Settings",
     computerUseUsage: "Usage",
     computerUseTrigger: "Start a computer-use turn",
-    computerUseTriggerDesc:
-      "Send /ccgui-cua <task> in the composer, e.g. /ccgui-cua open Calculator and compute 1+1. It applies to that one send only and never stays on.",
+    computerUseTriggerDesc: "Click the pointer button beside the composer to allow computer control for the next message, or send /ccgui-cua <task>. The agent decides when tools are needed. Permission applies to one message only.",
+    computerUsePreviewCursor: "Show pointer",
     computerUseCursor: "Virtual pointer",
     computerUseCursorDesc:
       "During a run a pointer follows every action so you can see where the agent acts. CC GUI draws it, keeps it visible for the whole run, and the model cannot turn it off.",

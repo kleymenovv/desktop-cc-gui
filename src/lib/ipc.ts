@@ -395,6 +395,8 @@ export interface ComputerUsePermissionStatus {
   /** False on platforms with no OS-level grant flow (Windows/Linux): the UI
    *  shows "no permission needed" instead of un-granted rows. */
   osPermissionsRequired: boolean;
+  agentDesktopAvailable?: boolean;
+  agentDesktopVersion?: string | null;
 }
 
 /** One entry of an engine's model catalog (`--list-models` probe). */
@@ -1578,6 +1580,7 @@ export const ipc = {
    *  where the driver needs no OS grant. */
   computerUsePermissionStatus: () =>
     invoke<ComputerUsePermissionStatus>("computer_use_permission_status"),
+  computerUsePreviewCursor: () => invoke<void>("computer_use_preview_cursor"),
   /** Deep-link the matching System Settings pane (macOS). */
   computerUseOpenPermissionSettings: (kind: "accessibility" | "screenRecording") =>
     invoke<void>("computer_use_open_permission_settings", { kind }),

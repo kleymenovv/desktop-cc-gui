@@ -15,8 +15,7 @@ import FileText from "lucide-react/dist/esm/icons/file-text";
 import Smartphone from "lucide-react/dist/esm/icons/smartphone";
 import Sparkles from "lucide-react/dist/esm/icons/sparkles";
 import Plug from "lucide-react/dist/esm/icons/plug";
-// 电脑操控入口：暂时隐藏，恢复时取消注释。
-// import MousePointer2 from "lucide-react/dist/esm/icons/mouse-pointer-2";
+import MousePointer2 from "lucide-react/dist/esm/icons/mouse-pointer-2";
 import i18n from "@/lib/i18n";
 import type { SettingsNavItem } from "@/components/application/settings/settings-shell";
 import { EngineIcon } from "@/components/foundations/icons/engine-icon";
@@ -175,12 +174,11 @@ const LazyMcpSection = lazySection(() =>
     default: module.McpSection,
   })),
 );
-// 电脑操控入口：暂时隐藏，恢复时取消注释。
-// const LazyComputerUseSection = lazySection(() =>
-//   import("./ComputerUseSection").then((module) => ({
-//     default: module.ComputerUseSection,
-//   })),
-// );
+const LazyComputerUseSection = lazySection(() =>
+  import("./ComputerUseSection").then((module) => ({
+    default: module.ComputerUseSection,
+  })),
+);
 
 settingsRegistry.register({
   id: "skills",
@@ -200,16 +198,15 @@ settingsRegistry.register({
   order: 1,
   component: LazyMcpSection,
 });
-// 电脑操控入口：暂时隐藏，恢复时取消注释。
-// settingsRegistry.register({
-//   id: "computerUse",
-//   key: "computerUse",
-//   label: () => i18n.t("settings.computerUse"),
-//   icon: MousePointer2,
-//   group: "capabilities",
-//   order: 2,
-//   component: LazyComputerUseSection,
-// });
+settingsRegistry.register({
+  id: "computerUse",
+  key: "computerUse",
+  label: () => i18n.t("settings.computerUse"),
+  icon: MousePointer2,
+  group: "capabilities",
+  order: 2,
+  component: LazyComputerUseSection,
+});
 settingsRegistry.register({
   id: "pet",
   key: "pet",

@@ -14,12 +14,59 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::OnceLock;
 
 use serde::Serialize;
 
 /// Emitted when the armed global Esc fires; the frontend interrupts the
 /// active computer-use run in response.
 pub const ESCAPE_EVENT: &str = "computeruse://escape";
+
+static AGENT_DESKTOP_DIR: OnceLock<PathBuf> = OnceLock::new();
+
+pub fn init_agent_desktop(resource_dir: PathBuf) {
+    let _ = AGENT_DESKTOP_DIR.set(resource_dir.join("agent-desktop"));
+}
+
+fn agent_desktop_dir() -> Option<PathBuf> {
+    // A debug .app is still relocatable: prefer its actual resource directory
+    // over the compile-time checkout used by an unbundled development run.
+    if let Some(dir) = AGENT_DESKTOP_DIR.get().filter(|dir| dir.is_dir()) {
+        return Some(dir.clone());
+    }
+    #[cfg(debug_assertions)]
+    {
+        return Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("resources/agent-desktop"));
+    }
+    #[cfg(not(debug_assertions))]
+    None
+}
+
+fn agent_desktop_binary() -> Option<PathBuf> {
+    let platform = match std::env::consts::OS {
+        "macos" => "darwin",
+        "windows" => "win32",
+        _ => "linux",
+    };
+    let arch = match std::env::consts::ARCH {
+        "aarch64" => "arm64",
+        "x86_64" => "x64",
+        _ => return None,
+    };
+    let dir = agent_desktop_dir()?;
+    #[cfg(target_os = "macos")]
+    if !dir
+        .join(format!("agent-desktop-macos-helper-darwin-{arch}"))
+        .is_file()
+    {
+        return None;
+    }
+    let path = dir.join(format!(
+        "agent-desktop-{platform}-{arch}{}",
+        std::env::consts::EXE_SUFFIX
+    ));
+    path.is_file().then_some(path)
+}
 
 // ==================== OS permission status ====================
 
@@ -31,6 +78,8 @@ pub struct PermissionStatus {
     /// False on platforms with no OS-level grant flow: the UI shows
     /// "no permission needed" instead of misleading un-granted rows.
     pub os_permissions_required: bool,
+    pub agent_desktop_available: bool,
+    pub agent_desktop_version: Option<String>,
 }
 
 #[cfg(target_os = "macos")]
@@ -72,6 +121,11 @@ pub fn permission_status() -> PermissionStatus {
         accessibility: accessibility_granted(),
         screen_recording: screen_recording_granted(),
         os_permissions_required: cfg!(target_os = "macos"),
+        agent_desktop_available: agent_desktop_binary().is_some(),
+        agent_desktop_version: agent_desktop_dir()
+            .and_then(|dir| std::fs::read(dir.join("version.json")).ok())
+            .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
+            .and_then(|value| value["version"].as_str().map(str::to_owned)),
     }
 }
 
@@ -127,8 +181,10 @@ pub fn computer_use_set_active(app: tauri::AppHandle, active: bool) -> Result<()
     let gs = app.global_shortcut();
     if active {
         let _ = gs.register(shortcut);
+        crate::cu_overlay::start_preparing();
     } else {
         let _ = gs.unregister(shortcut);
+        crate::cu_overlay::hide();
     }
     Ok(())
 }
@@ -186,8 +242,8 @@ fn helper_sibling_of(exe: &Path) -> Option<PathBuf> {
 /// build that never built the bin) fails the send up front with a reason the
 /// user can act on, instead of an MCP server that silently never connects.
 pub fn helper_path() -> Result<PathBuf, String> {
-    let exe = std::env::current_exe()
-        .map_err(|e| format!("resolve own exe for computer use: {e}"))?;
+    let exe =
+        std::env::current_exe().map_err(|e| format!("resolve own exe for computer use: {e}"))?;
     let path = helper_sibling_of(&exe)
         .ok_or_else(|| format!("{}: executable has no parent directory", exe.display()))?;
     // Unit tests run from target/<profile>/deps where no bin is built; they
@@ -207,12 +263,25 @@ pub fn helper_path() -> Result<PathBuf, String> {
 pub fn computer_use_spec() -> Result<McpServerSpec, String> {
     let helper = helper_path()?;
     let mut env = Vec::new();
+    if let Some(binary) = agent_desktop_binary() {
+        env.push((
+            "CCGUI_AGENT_DESKTOP_BIN".into(),
+            binary.to_string_lossy().into_owned(),
+        ));
+    }
     if let (Some(base), Some(token)) = (
         crate::cu_overlay::control_base(),
         crate::cu_overlay::control_token(),
     ) {
         env.push(("CCGUI_CU_CONTROL".to_string(), base));
         env.push(("CCGUI_CU_TOKEN".to_string(), token));
+    }
+    #[cfg(not(test))]
+    if !env.iter().any(|(key, _)| key == "CCGUI_CU_CONTROL") {
+        return Err(
+            "Computer-use cursor is unavailable; reopen CC GUI before starting computer control"
+                .into(),
+        );
     }
     Ok(McpServerSpec {
         name: MCP_SERVER_NAME.to_string(),
@@ -465,8 +534,8 @@ impl McpRestore {
             records.retain(|r| !(r.path == reference.path && r.server == reference.server));
             // Delete the file only when no other run still refs this path;
             // otherwise just drop our entry and keep the rest.
-            let delete_when_empty = reference.created_file
-                && !records.iter().any(|r| r.path == reference.path);
+            let delete_when_empty =
+                reference.created_file && !records.iter().any(|r| r.path == reference.path);
             remove_server_entry(
                 &reference.path,
                 std::slice::from_ref(&reference.server),
@@ -761,7 +830,9 @@ mod tests {
         let ws = temp_workspace("two-tools");
         // 两个工具先后注入同一工作区文件：两个条目、两条记录，各自持有。
         let computer = inject_workspace_mcp(&ws, &[test_spec()]).unwrap().unwrap();
-        let memory = inject_workspace_mcp(&ws, &[memory_spec()]).unwrap().unwrap();
+        let memory = inject_workspace_mcp(&ws, &[memory_spec()])
+            .unwrap()
+            .unwrap();
         let doc = mcp_json(&ws);
         assert!(doc["mcpServers"].get(MCP_SERVER_NAME).is_some());
         assert!(doc["mcpServers"]
