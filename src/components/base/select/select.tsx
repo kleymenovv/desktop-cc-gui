@@ -61,6 +61,9 @@ export interface SelectProps<T extends object>
   /** Customise the trigger's rendered value (e.g. a compact flag + dial code).
    *  Falls back to the selected item's own content when omitted. */
   renderValue?: ReactNode | ((values: AriaSelectValueRenderProps<T>) => ReactNode);
+  /** Optional search within the caller's item collection. */
+  search?: { value: string; placeholder: string; onChange: (value: string) => void };
+  emptyContent?: ReactNode;
   ref?: Ref<HTMLDivElement>;
 }
 
@@ -72,6 +75,8 @@ export function Select<T extends object>({
   children,
   items,
   renderValue,
+  search,
+  emptyContent,
   ref,
   ...props
 }: SelectProps<T>) {
@@ -86,7 +91,7 @@ export function Select<T extends object>({
   const triggerRef = useRef<HTMLButtonElement>(null);
   const popoverRef = useRef<HTMLElement>(null);
   const [isOpen, setIsOpen] = useState(false);
-  useDismissOnOutsidePress(isOpen, () => setIsOpen(false), [triggerRef, popoverRef]);
+  useDismissOnOutsidePress(isOpen, () => { setIsOpen(false); search?.onChange(""); }, [triggerRef, popoverRef]);
   // Pressing the trigger while open closes the popover instead of reopening
   const allowOpenChange = useTriggerToggle(isOpen, triggerRef);
 
@@ -95,7 +100,9 @@ export function Select<T extends object>({
       ref={ref}
       {...props}
       isOpen={isOpen}
-      onOpenChange={(o) => allowOpenChange(o) && setIsOpen(o)}
+      onOpenChange={(o) => {
+        if (allowOpenChange(o)) { setIsOpen(o); if (!o) search?.onChange(""); }
+      }}
       className={cx("group flex flex-col", className)}
     >
       {({ isOpen }) => (
@@ -145,9 +152,27 @@ export function Select<T extends object>({
               popoverClassName,
             )}
           >
+            {search && (
+              <div className="mb-2 px-1 pt-1">
+                <input
+                  aria-label={search.placeholder}
+                  placeholder={search.placeholder}
+                  value={search.value}
+                  onChange={(event) => search.onChange(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "ArrowDown") {
+                      event.preventDefault();
+                      popoverRef.current?.querySelector<HTMLElement>('[role="option"]:not([aria-disabled="true"])')?.focus();
+                    }
+                  }}
+                  className="h-8 w-full min-w-0 rounded-lg border border-border-button-default bg-background-primary-default px-2.5 text-body-2-medium text-text-primary outline-none placeholder:text-text-tertiary focus:border-border-focus-ring"
+                />
+              </div>
+            )}
             <AriaListBox
               items={items}
               className={cx(MENU_ITEMS_CONTAINER, "max-h-[240px] overflow-auto")}
+              renderEmptyState={emptyContent ? () => emptyContent : undefined}
             >
               <SelectSizeContext.Provider value={size}>{children}</SelectSizeContext.Provider>
             </AriaListBox>

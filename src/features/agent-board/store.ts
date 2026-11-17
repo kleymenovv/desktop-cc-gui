@@ -17,6 +17,7 @@ interface AgentBoardState {
   active: boolean;
   filter: AgentBoardFilter;
   search: string;
+  project: string;
   /** Session key whose detail drawer is open; null = drawer closed. */
   selectedKey: string | null;
   openBoard: () => void;
@@ -24,6 +25,7 @@ interface AgentBoardState {
   deactivate: () => void;
   close: () => void;
   setFilter: (filter: AgentBoardFilter) => void;
+  setProject: (project: string) => void;
   setSearch: (search: string) => void;
   select: (key: string | null) => void;
 }
@@ -33,6 +35,7 @@ export const useAgentBoardStore = create<AgentBoardState>()((set, get) => ({
   active: false,
   filter: "all",
   search: "",
+  project: "",
   selectedKey: null,
 
   openBoard: () => set({ open: true, active: true }),
@@ -43,6 +46,7 @@ export const useAgentBoardStore = create<AgentBoardState>()((set, get) => ({
   },
   close: () => set({ open: false, active: false, selectedKey: null }),
   setFilter: (filter) => set({ filter }),
+  setProject: (project) => set({ project }),
   setSearch: (search) => set({ search }),
   select: (selectedKey) => set({ selectedKey }),
 }));

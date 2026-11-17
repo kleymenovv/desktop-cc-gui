@@ -160,35 +160,35 @@ body {
   font-variant-ligatures: contextual;
   font-kerning: normal;
 }
-/* Thin scrollbars matching the BoardUI demo. The thumb rides on a transparent
- * track and keeps a 2px transparent inset so it reads as an overlay instead
- * of the OS default slab. Semantic neutral tokens flip under `.dark`. */
-* {
-  scrollbar-width: thin;
-  scrollbar-color: var(--color-border-button-hover) transparent;
+/* Keep native scroll mechanics and a generous hit area, with a narrow grip.
+ * Non-auto standard properties override WebKit pseudo-elements in modern
+ * engines, so use the standard fallback only where pseudos aren't supported. */
+@supports not selector(::-webkit-scrollbar) {
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-border-button-hover) transparent;
+  }
 }
-::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+@supports selector(::-webkit-scrollbar) {
+  * { scrollbar-width: auto; scrollbar-color: auto; }
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-track, ::-webkit-scrollbar-corner { background: transparent; }
+  ::-webkit-scrollbar-thumb {
+    min-height: 28px;
+    min-width: 28px;
+    background-color: var(--color-border-button-hover);
+    border: 2px solid transparent;
+    border-radius: 999px;
+    background-clip: padding-box;
+  }
+  ::-webkit-scrollbar-thumb:hover, ::-webkit-scrollbar-thumb:active {
+    background-color: var(--color-border-button-active);
+  }
+  ::-webkit-scrollbar-button { display: none; width: 0; height: 0; }
 }
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-::-webkit-scrollbar-thumb {
-  /* background-tertiary-hover is neutral-300 light / neutral-700 dark — the
-   * exact pair this thumb used to hardcode per theme, so the old `.dark`
-   * overrides below are gone. */
-  background-color: var(--color-background-tertiary-hover);
-  border: 2px solid transparent;
-  border-radius: 999px;
-  background-clip: padding-box;
-}
-::-webkit-scrollbar-thumb:hover {
-  /* border-button-active: neutral-400 light / neutral-600 dark. */
-  background-color: var(--color-border-button-active);
-}
-::-webkit-scrollbar-corner {
-  background: transparent;
+@media (forced-colors: active) {
+  * { scrollbar-color: auto; }
+  ::-webkit-scrollbar-thumb { background-color: ButtonText; }
 }
 
 html {
@@ -455,7 +455,6 @@ input[type="search"]::-webkit-search-cancel-button {
      row below the last line as a black frame. The extra .xterm in the
      selector outranks the lazily injected xterm.css rule of equal weight. */
   background-color: transparent;
-  scrollbar-width: thin;
 }
 
 /* Password inputs draw their own reveal toggle (see InputBase); hide the

@@ -48,8 +48,7 @@ export function AiChatSidebar({
   onNewBrowser,
   onOpenPlugins,
   onOpenMission,
-  onOpenAgentBoard,
-  agentBoardBadge,
+  onOpenPaperclip,
   onReorderWorkspaces,
   onThreadAction,
   onCopyThreadId,
@@ -110,9 +109,9 @@ export function AiChatSidebar({
   onOpenPlugins?: () => void;
   /** 任务工作台入口（原生中心页签；替换原「自动化」占位项）。 */
   onOpenMission?: () => void;
+  /** Persistent Paperclip team, separate from open chat sessions. */
+  onOpenPaperclip?: () => void;
   /** Agent board nav entry and its waiting-agents badge. */
-  onOpenAgentBoard?: () => void;
-  agentBoardBadge?: string | null;
   onOpenSettings?: () => void;
   onClose?: () => void;
   flat?: boolean;
@@ -183,8 +182,7 @@ export function AiChatSidebar({
             onNewBrowser={onNewBrowser}
             onOpenPlugins={onOpenPlugins}
             onOpenMission={onOpenMission}
-            onOpenAgentBoard={onOpenAgentBoard}
-            agentBoardBadge={agentBoardBadge}
+            onOpenPaperclip={onOpenPaperclip}
           />
 
           <WorkspaceSection

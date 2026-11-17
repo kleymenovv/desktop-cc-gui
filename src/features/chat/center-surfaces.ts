@@ -1,7 +1,9 @@
+import { useProjectHomeStore } from "@/features/project-home/store";
 import { useBrowserStore } from "@/features/browser/store";
 import { useFilesStore } from "@/features/files/store";
 import { useGitStore } from "@/features/git/store";
 import { useMissionStore } from "@/features/mission/store";
+import { usePaperclipStore } from "@/features/paperclip/store";
 import { useAgentBoardStore } from "@/features/agent-board/store";
 import { usePluginHubStore } from "@/features/plugins/hub/store";
 import { usePluginTabsStore } from "@/features/plugins/runtime/center-tabs";
@@ -19,6 +21,7 @@ import { useReleaseNotesTabStore } from "@/features/update/notes-tab";
  * 的面（startNewChat / selectSession / openFile / openTab…）。
  */
 export function dismissCenterSurfaces(): void {
+  useProjectHomeStore.getState().deactivate();
   useGitStore.getState().closeDiff();
   useFilesStore.getState().clearActiveFile();
   useBrowserStore.getState().deactivate();
@@ -26,5 +29,6 @@ export function dismissCenterSurfaces(): void {
   usePluginHubStore.getState().deactivate();
   useMissionStore.getState().deactivate();
   useAgentBoardStore.getState().deactivate();
+  usePaperclipStore.getState().deactivate();
   useReleaseNotesTabStore.getState().deactivate();
 }

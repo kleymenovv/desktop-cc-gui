@@ -1,3 +1,5 @@
+import { useProjectHomeStore } from "@/features/project-home/store";
+import { usePaperclipStore } from "@/features/paperclip/store";
 import { lazy, Suspense, useCallback, type ReactNode } from "react";
 import { centerTabRegistry, pluginIdFromRegistryKey, useRegistry } from "@ccgui/plugin-sdk";
 import { PluginBoundary } from "@/features/plugins/boundary/PluginBoundary";
@@ -23,7 +25,11 @@ const MissionWorkbench = lazy(() =>
     default: m.MissionWorkbench,
   })),
 );
-// Agent board loads on first open (not a startup path).
+const ProjectHome = lazy(() => import("@/features/project-home/ProjectHome").then((m) => ({ default: m.ProjectHome })));
+// The team and session board load only when opened.
+const PaperclipTeam = lazy(() =>
+  import("@/features/paperclip/PaperclipTeam").then((m) => ({ default: m.PaperclipTeam })),
+);
 const AgentBoard = lazy(() =>
   import("@/features/agent-board/AgentBoard").then((m) => ({ default: m.AgentBoard })),
 );
@@ -85,6 +91,7 @@ function centerSurfaces(input: {
   pluginHubActive: boolean;
   missionActive: boolean;
   boardActive: boolean;
+  teamActive: boolean;
   notesActive: boolean;
   diffOpen: boolean;
 }): {
@@ -95,6 +102,7 @@ function centerSurfaces(input: {
   hub: boolean;
   mission: boolean;
   board: boolean;
+  team: boolean;
   notes: boolean;
 } {
   if (input.diffOpen) {
@@ -106,6 +114,7 @@ function centerSurfaces(input: {
       hub: false,
       mission: false,
       board: false,
+      team: false,
       notes: false,
     };
   }
@@ -118,8 +127,9 @@ function centerSurfaces(input: {
   // 用户点一下即可切回来）。
   // The agent board yields only to the other explicitly opened singletons.
   const boardInView = input.boardActive && !missionInView && !hubInView;
-  const notesInView = input.notesActive && !missionInView && !hubInView && !boardInView;
-  const singletonInView = missionInView || hubInView || boardInView || notesInView;
+  const teamInView = input.teamActive && !missionInView && !hubInView && !boardInView;
+  const notesInView = input.notesActive && !missionInView && !hubInView && !boardInView && !teamInView;
+  const singletonInView = missionInView || hubInView || boardInView || teamInView || notesInView;
   return {
     chat: !(
       input.activeFilePath ||
@@ -137,6 +147,7 @@ function centerSurfaces(input: {
     hub: hubInView,
     mission: missionInView,
     board: boardInView,
+    team: teamInView,
     notes: notesInView,
   };
 }
@@ -199,6 +210,10 @@ export function ChatCenterPane({
 }) {
   // 原生 nav/title events → store, mounted once while this pane lives.
   useBrowserNavSync();
+  const projectPaths = useProjectHomeStore((s) => s.paths);
+  const projectPath = useProjectHomeStore((s) => s.activePath);
+  const teamOpen = usePaperclipStore((s) => s.open);
+  const teamActive = usePaperclipStore((s) => s.active);
   // 插件中心「创建插件」：开一个新会话并把内置 skill 的调用预填进输入框
   // （skill 由 Rust 侧装进各引擎的 skills 根，见 creator-chat.ts）。聚焦只能在
   // 这里做——composerInputRef 归本层所有。
@@ -217,6 +232,7 @@ export function ChatCenterPane({
     pluginHubActive,
     missionActive,
     boardActive,
+    teamActive: teamActive || projectPath !== null,
     notesActive,
     diffOpen: diffView !== null,
   });
@@ -299,6 +315,16 @@ export function ChatCenterPane({
               />
             </Suspense>
           )}
+        </Surface>
+      )}
+
+      {projectPaths.map((path) => <Surface key={path} visible={surfaces.team && projectPath === path}>
+        <Suspense fallback={<CenteredSpinner />}><ProjectHome path={path} visible={surfaces.team && projectPath === path} /></Suspense>
+      </Surface>)}
+
+      {teamOpen && (
+        <Surface visible={surfaces.team && projectPath === null}>
+          <Suspense fallback={<CenteredSpinner />}><PaperclipTeam visible={surfaces.team && projectPath === null} /></Suspense>
         </Surface>
       )}
 

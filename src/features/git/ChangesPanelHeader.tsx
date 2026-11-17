@@ -24,8 +24,14 @@ import {
 } from "@/components/base/dropdown/dropdown";
 import { type BranchInfo } from "@/lib/ipc";
 import { cx } from "@/utils/cx";
-import { GitHistoryDialog } from "./GitHistoryDialog";
 import { useGitStore } from "./store";
+
+const OPERATION_LABELS: Record<string, string> = {
+  refresh: "common.refresh", retryStatus: "common.refresh", fetch: "git.fetch",
+  pull: "git.pull", push: "git.push", checkout: "git.branch",
+  createBranch: "git.newBranch", init: "git.initRepo", stage: "git.stage",
+  unstage: "git.unstage", discard: "git.discard", commit: "git.commit",
+};
 
 interface ChangesPanelHeaderProps {
   workspacePath: string;
@@ -33,6 +39,8 @@ interface ChangesPanelHeaderProps {
    *  other than the workspace root: rendered as a badge so the user can see
    *  which repo stage/commit/pull/push will act on. */
   followedRepoPath?: string;
+  onToggleHistory?: () => void;
+  historyOpen?: boolean;
   notRepo: boolean;
   branch: string | undefined;
   /** Commits ahead of / behind the upstream; undefined hides the indicator. */
@@ -51,6 +59,8 @@ interface ChangesPanelHeaderProps {
 /** Title row with refresh/pull/push, the branch picker, and the new-branch form. */
 export function ChangesPanelHeader({
   workspacePath,
+  onToggleHistory,
+  historyOpen = false,
   followedRepoPath,
   notRepo,
   branch,
@@ -69,7 +79,6 @@ export function ChangesPanelHeader({
   const [creatingBranch, setCreatingBranch] = useState(false);
   const [newBranchName, setNewBranchName] = useState("");
   const [branchQuery, setBranchQuery] = useState("");
-  const [historyOpen, setHistoryOpen] = useState(false);
   // Spin → check → idle click feedback for refresh/fetch; check flash only for
   // pull/push (a spinning cloud reads as a glitch, not progress).
   const refreshAction = useActionFeedback({ spin: true });
@@ -169,7 +178,8 @@ export function ChangesPanelHeader({
               pushAction.start(() => useGitStore.getState().push(workspacePath)),
             )
           }
-          onOpenHistory={() => setHistoryOpen(true)}
+          onOpenHistory={() => onToggleHistory?.()}
+          historyOpen={historyOpen}
           pullSources={pullSources}
           upstream={currentUpstream}
         />
@@ -179,6 +189,7 @@ export function ChangesPanelHeader({
           workspacePath={workspacePath}
           branch={branch}
           branches={branches}
+          busy={Object.keys(pending).length > 0}
           run={run}
           open={branchOpen}
           onOpenChange={setBranchOpen}
@@ -193,7 +204,7 @@ export function ChangesPanelHeader({
       {creatingBranch && (
         <NewBranchForm
           name={newBranchName}
-          busy={pending.createBranch === true}
+          busy={Object.keys(pending).length > 0}
           onNameChange={setNewBranchName}
           onSubmit={(name) =>
             run("createBranch", async () => {
@@ -208,10 +219,14 @@ export function ChangesPanelHeader({
           }}
         />
       )}
-      {error && <HeaderError message={error} onDismiss={onDismissError} />}
-      {historyOpen && (
-        <GitHistoryDialog workspacePath={workspacePath} onClose={() => setHistoryOpen(false)} />
+      {Object.keys(pending).length > 0 && (
+        <div role="status" className="flex items-center gap-2 text-caption-1-regular text-text-secondary">
+          <RefreshCw aria-hidden className="size-3.5 motion-safe:animate-spin" />
+          {Object.keys(pending).map((key) => t(OPERATION_LABELS[key] ?? "common.loading")).join(" · ")}
+          <span>{t("common.loading")}</span>
+        </div>
       )}
+      {error && <HeaderError message={error} onDismiss={onDismissError} />}
     </div>
   );
 }
@@ -238,6 +253,7 @@ function HeaderActions({
   onPull,
   onPush,
   onOpenHistory,
+  historyOpen,
   pullSources,
   upstream,
 }: {
@@ -254,6 +270,7 @@ function HeaderActions({
   onPull: (remote?: string, branch?: string) => void;
   onPush: () => void;
   onOpenHistory: () => void;
+  historyOpen: boolean;
   pullSources: Array<{ remote: string; branch: string; label: string }>;
   upstream: string | undefined;
 }) {
@@ -284,7 +301,7 @@ function HeaderActions({
         size="small"
         aria-label={t("git.fetch")}
         title={t("git.fetch")}
-        disabled={notRepo || pending.fetch === true}
+        disabled={notRepo || Object.keys(pending).length > 0}
         onClick={onFetch}
       >
         <ActionFeedbackIcon icon={Download} feedback={fetchFeedback} spin />
@@ -294,7 +311,7 @@ function HeaderActions({
       <Dropdown>
         <DropdownTrigger
           aria-label={t("git.pull")}
-          isDisabled={notRepo || pending.pull === true}
+          isDisabled={notRepo || Object.keys(pending).length > 0}
           className={ICON_ACTION_CLASS}
         >
           <ActionFeedbackIcon icon={CloudDownload} feedback={pullFeedback} />
@@ -341,7 +358,7 @@ function HeaderActions({
         size="small"
         aria-label={t("git.push")}
         title={t("git.push")}
-        disabled={notRepo || pending.push === true}
+        disabled={notRepo || Object.keys(pending).length > 0}
         onClick={onPush}
       >
         <ActionFeedbackIcon icon={CloudUpload} feedback={pushFeedback} />
@@ -351,6 +368,7 @@ function HeaderActions({
         size="small"
         aria-label={t("git.history")}
         title={t("git.history")}
+        aria-pressed={historyOpen}
         disabled={notRepo}
         onClick={onOpenHistory}
       />
@@ -402,6 +420,7 @@ function BranchCounts({
 /** Branch trigger + searchable popover + the "new branch" entry. */
 function BranchPicker({
   workspacePath,
+  busy,
   branch,
   branches,
   run,
@@ -412,6 +431,7 @@ function BranchPicker({
   onCreateBranch,
 }: {
   workspacePath: string;
+  busy: boolean;
   branch: string | undefined;
   branches: BranchInfo[] | undefined;
   run: (key: string, action: () => Promise<unknown>) => void;
@@ -458,6 +478,7 @@ function BranchPicker({
         }}
       >
         <DropdownTrigger
+          isDisabled={busy}
           className={cx(
             "flex h-8 min-w-0 flex-1 items-center gap-1.5 rounded-lg border border-border-button-default",
             "px-2 text-body-medium text-text-primary shadow-xs",

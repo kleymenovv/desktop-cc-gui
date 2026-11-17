@@ -1,5 +1,7 @@
 "use client";
 
+import { PaperclipNavEntry } from "./agent-nav-entries";
+
 import { useEffect, useRef, useState, type ComponentType } from "react";
 import { useTranslation } from "react-i18next";
 import Globe from "lucide-react/dist/esm/icons/globe";
@@ -8,7 +10,6 @@ import MessageSquarePlus from "lucide-react/dist/esm/icons/message-square-plus";
 import PanelLeft from "lucide-react/dist/esm/icons/panel-left";
 import ScanSearch from "lucide-react/dist/esm/icons/scan-search";
 import Settings from "lucide-react/dist/esm/icons/settings";
-import SquareKanban from "lucide-react/dist/esm/icons/square-kanban";
 import Workflow from "lucide-react/dist/esm/icons/workflow";
 import { Focusable } from "react-aria-components";
 import { Tooltip, TooltipContent } from "@/components/base/tooltip/tooltip";
@@ -228,29 +229,20 @@ export function SidebarPrimaryNav({
   onNewBrowser,
   onOpenPlugins,
   onOpenMission,
-  onOpenAgentBoard,
-  agentBoardBadge,
+  onOpenPaperclip,
 }: {
   onNewSession?: () => void;
   onNewBrowser?: () => void;
   onOpenPlugins?: () => void;
   onOpenMission?: () => void;
-  onOpenAgentBoard?: () => void;
-  agentBoardBadge?: string | null;
+  onOpenPaperclip?: () => void;
 }) {
   const { t } = useTranslation();
   const pluginEntries = [...useRegistry(sidebarNavRegistry)].sort(compareByOrder);
   return (
     <nav className="flex w-full shrink-0 flex-col gap-1">
       <NavItem icon={MessageSquarePlus} label={t("chat.newSession")} onClick={onNewSession} />
-      {onOpenAgentBoard && (
-        <NavItem
-          icon={SquareKanban}
-          label={t("agentBoard.title")}
-          badge={agentBoardBadge}
-          onClick={onOpenAgentBoard}
-        />
-      )}
+      {onOpenPaperclip && <PaperclipNavEntry onOpen={onOpenPaperclip} />}
       <NavItem icon={LayoutGrid} label={t("plugins.hub.title")} onClick={onOpenPlugins} />
       {onNewBrowser && (
         <NavItem icon={Globe} label={t("chat.newBrowser")} onClick={onNewBrowser} />

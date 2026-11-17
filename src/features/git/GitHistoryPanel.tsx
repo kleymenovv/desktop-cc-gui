@@ -1,5 +1,7 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { errorText } from "@/lib/errors";
+import RefreshCw from "lucide-react/dist/esm/icons/refresh-cw";
 import X from "lucide-react/dist/esm/icons/x";
 import { Button } from "@/components/base/buttons/button";
 import { relativeTime } from "@/features/chat/time";
@@ -13,7 +15,7 @@ const DOT_R = 4.5;
 
 /** Rough branch-history visualization: commits newest-first with lane
  *  connectors derived from parent ids (see history-graph.ts). */
-export function GitHistoryDialog({
+export function GitHistoryPanel({
   workspacePath,
   onClose,
 }: {
@@ -23,41 +25,36 @@ export function GitHistoryDialog({
   const { t } = useTranslation();
   const commits = useGitStore((s) => s.logByWorkspace[workspacePath]);
 
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [revision, setRevision] = useState(0);
   useEffect(() => {
-    void useGitStore.getState().loadLog(workspacePath);
-  }, [workspacePath]);
-
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+    let live = true;
+    setLoading(true);
+    setError(null);
+    void useGitStore.getState().loadLog(workspacePath)
+      .catch((err: unknown) => { if (live) setError(errorText(err)); })
+      .finally(() => { if (live) setLoading(false); });
+    return () => { live = false; };
+  }, [workspacePath, revision]);
 
   const layout = useMemo(() => computeGraph(commits ?? []), [commits]);
   const gutter = Math.max(28, layout.laneCount * LANE_W + PAD * 2);
   const height = layout.rows.length * ROW_H;
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-      onMouseDown={onClose}
-    >
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-label={t("git.historyTitle")}
-        className="flex h-[min(82vh,760px)] w-[min(940px,94vw)] flex-col overflow-hidden rounded-xl border border-separator-border bg-background-primary-default shadow-xl"
-        onMouseDown={(event) => event.stopPropagation()}
-      >
-        <div className="flex items-center gap-2 border-b border-separator-border px-4 py-3">
+    <section aria-label={t("git.historyTitle")} aria-busy={loading}
+      className="flex h-[40%] min-h-40 shrink-0 flex-col overflow-hidden border-t border-separator-border bg-background-primary-default">
+        <div className="flex items-center gap-2 border-b border-separator-border px-3 py-2">
           <span className="shrink-0 text-body-medium text-text-primary">
             {t("git.historyTitle")}
           </span>
           <span className="min-w-0 truncate text-caption-1-regular text-text-tertiary">
             {workspacePath}
           </span>
+          <Button size="xs" variant="ghost" iconOnly leadingIcon={RefreshCw}
+            aria-label={t("common.refresh")} disabled={loading}
+            onClick={() => setRevision((value) => value + 1)} className="ml-auto shrink-0" />
           <Button
             size="xs"
             variant="ghost"
@@ -70,7 +67,11 @@ export function GitHistoryDialog({
         </div>
 
         <div className="min-h-0 flex-1 overflow-auto">
-          {layout.rows.length === 0 ? (
+          {error ? (
+            <p role="alert" className="break-words px-3 py-4 text-caption-1-regular text-text-error-primary">{error}</p>
+          ) : loading && !commits ? (
+            <p role="status" className="px-3 py-4 text-caption-1-regular text-text-tertiary">{t("common.loading")}</p>
+          ) : layout.rows.length === 0 ? (
             <p className="px-4 py-8 text-center text-body-2-regular text-text-tertiary">
               {t("git.noCommits")}
             </p>
@@ -123,14 +124,14 @@ export function GitHistoryDialog({
               {layout.rows.map((row) => (
                 <div
                   key={row.commit.id}
-                  className="flex items-center gap-3 pr-4"
+                  className="flex items-center gap-2 pr-3"
                   style={{ height: ROW_H, paddingLeft: gutter }}
                 >
-                  <span className="w-16 shrink-0 font-mono text-caption-1-regular text-text-tertiary">
+                  <span className="w-14 shrink-0 font-mono text-caption-1-regular text-text-tertiary">
                     {row.commit.shortId}
                   </span>
-                  <div className="flex min-w-0 flex-1 items-center gap-2">
-                    {row.commit.refs.map((ref) => (
+                  <div className="flex min-w-0 flex-1 flex-col items-start justify-center gap-0.5">
+                    <div className="flex max-w-full gap-1 overflow-hidden">{row.commit.refs.map((ref) => (
                       <span
                         key={ref}
                         className="shrink-0 rounded bg-status-blue-background/40 px-1.5 py-0.5 text-caption-2-medium text-status-blue-text"
@@ -138,15 +139,12 @@ export function GitHistoryDialog({
                       >
                         {ref}
                       </span>
-                    ))}
-                    <span className="truncate text-body-2-regular text-text-primary">
+                    ))}</div>
+                    <span title={`${row.commit.summary} · ${row.commit.author}`} className="w-full truncate text-body-2-regular text-text-primary">
                       {row.commit.summary}
                     </span>
                   </div>
-                  <span className="hidden shrink-0 text-caption-1-regular text-text-tertiary sm:block">
-                    {row.commit.author}
-                  </span>
-                  <span className="w-24 shrink-0 text-right text-caption-1-regular text-text-tertiary">
+                  <span className="w-10 shrink-0 text-right text-caption-1-regular text-text-tertiary">
                     {relativeTime(row.commit.time * 1000)}
                   </span>
                 </div>
@@ -154,7 +152,6 @@ export function GitHistoryDialog({
             </div>
           )}
         </div>
-      </div>
-    </div>
+    </section>
   );
 }

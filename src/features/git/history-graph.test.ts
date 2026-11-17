@@ -51,6 +51,19 @@ describe("computeGraph", () => {
     ]);
   });
 
+  it("reuses lanes after successive merges converge", () => {
+    const commits: GitCommit[] = [];
+    for (let i = 0; i < 40; i++) {
+      const base = i === 39 ? "root" : `merge-${i + 1}`;
+      commits.push(commit(`merge-${i}`, [`a-${i}`, `b-${i}`]),
+        commit(`a-${i}`, [base]), commit(`b-${i}`, [base]));
+    }
+    commits.push(commit("root"));
+    const graph = computeGraph(commits);
+    expect(graph.laneCount).toBe(2);
+    expect(graph.edges).toHaveLength(160);
+  });
+
   it("ignores parents outside the returned window", () => {
     const layout = computeGraph([commit("b", ["a"])]);
     expect(layout.edges).toEqual([]);

@@ -77,10 +77,9 @@ export function useComposerActions({
       // App commands resolve BEFORE the draft is cleared: a computer-use
       // send this session cannot honor leaves the user's text and
       // attachments in place to fix.
-      const appCommand =
-        images.length === 0
-          ? parseAppCommand(value, active.workspacePath)
-          : null;
+      const parsedCommand = parseAppCommand(value, active.workspacePath);
+      // Explicit computer-use commands keep their flag with attachments.
+      const appCommand = images.length === 0 || parsedCommand?.command === "cua" ? parsedCommand : null;
       if (computerUseArmed && !appCommand) {
         const refusal = computerUseRefusalKey(engines, active.engine);
         if (refusal) { setSessionError(sessionKey, t(refusal)); return; }

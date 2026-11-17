@@ -94,14 +94,6 @@ export const shortcutActions: ShortcutAction[] = [
     defaultMac: "cmd+f",
   },
   {
-    id: "openAgentBoard",
-    setting: "openAgentBoardShortcut",
-    category: "sessions",
-    labelKey: "shortcuts.actions.openAgentBoard",
-    defaultMac: "cmd+shift+a",
-    commandId: "builtin:openAgentBoard",
-  },
-  {
     id: "nextWaitingAgent",
     setting: "nextWaitingAgentShortcut",
     category: "sessions",

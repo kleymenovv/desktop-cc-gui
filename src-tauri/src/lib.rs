@@ -28,6 +28,7 @@ pub mod metrics;
 pub mod mission;
 pub mod open_app;
 pub mod paths;
+pub mod paperclip;
 pub mod pet_overlay;
 pub mod pets;
 pub mod plugin_caps;
@@ -659,6 +660,13 @@ pub fn run() {
             plugin_caps::plugin_agent_interrupt,
             mission::mission_agent_start,
             mission::mission_agent_interrupt,
+            paperclip::paperclip_attachment_file,
+            paperclip::paperclip_config,
+            paperclip::paperclip_connect,
+            paperclip::paperclip_request,
+            paperclip::paperclip_service,
+            paperclip::paperclip_avatar,
+            paperclip::paperclip_codex_limits,
             // web access
             web::web_access_start,
             web::web_access_stop,

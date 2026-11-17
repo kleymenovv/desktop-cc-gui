@@ -1,3 +1,5 @@
+import { PROJECT_TAB_PREFIX, useProjectHomeStore } from "@/features/project-home/store";
+import FolderOpen from "lucide-react/dist/esm/icons/folder-open";
 import { useCallback, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { useShallow } from "zustand/react/shallow";
@@ -7,11 +9,14 @@ import Globe from "lucide-react/dist/esm/icons/globe";
 import LayoutGrid from "lucide-react/dist/esm/icons/layout-grid";
 import Network from "lucide-react/dist/esm/icons/network";
 import Sparkles from "lucide-react/dist/esm/icons/sparkles";
+import Users from "lucide-react/dist/esm/icons/users";
 import SquareKanban from "lucide-react/dist/esm/icons/square-kanban";
 import { BROWSER_TAB_PREFIX, useBrowserStore, type BrowserTab } from "@/features/browser/store";
 import { browserTabLabel } from "@/features/browser/address";
 import { useBetaFeature } from "@/features/settings/beta-features";
 import { MISSION_WORKBENCH_TAB_KEY, useMissionStore } from "@/features/mission/store";
+import { PAPERCLIP_TAB_KEY, usePaperclipStore } from "@/features/paperclip/store";
+import { dismissCenterSurfaces } from "./center-surfaces";
 import { AGENT_BOARD_TAB_KEY, useAgentBoardStore } from "@/features/agent-board/store";
 import { PLUGIN_HUB_TAB_KEY, usePluginHubStore } from "@/features/plugins/hub/store";
 import { centerTabRegistry, useRegistry } from "@ccgui/plugin-sdk";
@@ -149,6 +154,13 @@ export function useChatTabs({
   const missionOpen = useMissionStore((s) => s.open);
   const missionActive = useMissionStore((s) => s.active);
   // Agent board center tab (native single instance).
+  const projectPaths = useProjectHomeStore((s) => s.paths);
+  const projectPath = useProjectHomeStore((s) => s.activePath);
+  const workspaces = useChatStore((s) => s.workspaces);
+  const workspaceAliases = useChatStore((s) => s.workspaceAliases);
+  const projectTabItems = useMemo(() => projectPaths.map((path) => ({ key: PROJECT_TAB_PREFIX + path, label: workspaceAliases[workspaces.find((w) => w.path === path)?.id ?? ""] || workspaces.find((w) => w.path === path)?.name || path.split(/[\\/]/).filter(Boolean).at(-1) || path, title: path, icon: FolderOpen, streaming: false })), [projectPaths, workspaces, workspaceAliases]);
+  const teamOpen = usePaperclipStore((s) => s.open);
+  const teamActive = usePaperclipStore((s) => s.active);
   const boardOpen = useAgentBoardStore((s) => s.open);
   const boardActive = useAgentBoardStore((s) => s.active);
   // 插件中心页签（原生单实例）：侧栏「插件」入口的落地页。
@@ -314,6 +326,10 @@ export function useChatTabs({
         : [],
     [visibleMissionOpen, t],
   );
+  const teamTabItems = useMemo(
+    () => teamOpen ? [{ key: PAPERCLIP_TAB_KEY, label: t("paperclip.title"), title: t("paperclip.title"), icon: Users as LucideIcon, streaming: false }] : [],
+    [teamOpen, t],
+  );
   const boardTabItems = useMemo(
     () =>
       boardOpen
@@ -356,6 +372,8 @@ export function useChatTabs({
       ...hubTabItems,
       ...missionTabItems,
       ...boardTabItems,
+      ...teamTabItems,
+      ...projectTabItems,
       ...notesTabItems,
       ...(diffView
         ? [
@@ -369,7 +387,7 @@ export function useChatTabs({
           ]
         : []),
     ],
-    [sessionTabItems, fileTabItems, browserTabItems, pluginTabItems, hubTabItems, missionTabItems, boardTabItems, notesTabItems, diffView],
+    [sessionTabItems, fileTabItems, browserTabItems, pluginTabItems, hubTabItems, missionTabItems, boardTabItems, teamTabItems, projectTabItems, notesTabItems, diffView],
   );
   const activeTabKey = activeCenterTabKey({
     diffView,
@@ -378,6 +396,8 @@ export function useChatTabs({
     hubActive,
     missionActive: visibleMissionActive,
     boardActive,
+    teamActive,
+    projectPath,
     notesActive,
     activeFilePath,
     active,
@@ -466,13 +486,15 @@ interface SessionTabItem {
 
 /** Tab-kind routing shared by select/close/reorder: keys carry a prefix so
  *  each kind lands in its own store. */
-type TabKind = "session" | "file" | "browser" | "plugin" | "hub" | "mission" | "board" | "notes";
+type TabKind = "session" | "file" | "browser" | "plugin" | "hub" | "mission" | "board" | "team" | "project" | "notes";
 
 function tabKindOf(key: string): TabKind {
   if (key.startsWith(BROWSER_TAB_PREFIX)) return "browser";
   if (key.startsWith(PLUGIN_TAB_PREFIX)) return "plugin";
   if (key === PLUGIN_HUB_TAB_KEY) return "hub";
   if (key === MISSION_WORKBENCH_TAB_KEY) return "mission";
+  if (key.startsWith(PROJECT_TAB_PREFIX)) return "project";
+  if (key === PAPERCLIP_TAB_KEY) return "team";
   if (key === AGENT_BOARD_TAB_KEY) return "board";
   if (key === RELEASE_NOTES_TAB_KEY) return "notes";
   if (key.startsWith(FILE_TAB_PREFIX)) return "file";
@@ -490,6 +512,8 @@ function activeCenterTabKey({
   hubActive,
   missionActive,
   boardActive,
+  teamActive,
+  projectPath,
   notesActive,
   activeFilePath,
   active,
@@ -500,6 +524,8 @@ function activeCenterTabKey({
   hubActive: boolean;
   missionActive: boolean;
   boardActive: boolean;
+  teamActive?: boolean;
+  projectPath?: string | null;
   notesActive: boolean;
   activeFilePath: string | null;
   active: ActiveSession | null;
@@ -510,6 +536,8 @@ function activeCenterTabKey({
   if (hubActive) return PLUGIN_HUB_TAB_KEY;
   if (missionActive) return MISSION_WORKBENCH_TAB_KEY;
   if (boardActive) return AGENT_BOARD_TAB_KEY;
+  if (projectPath) return PROJECT_TAB_PREFIX + projectPath;
+  if (teamActive) return PAPERCLIP_TAB_KEY;
   if (notesActive) return RELEASE_NOTES_TAB_KEY;
   if (activeFilePath) return FILE_TAB_PREFIX + activeFilePath;
   return active ? sessionKey(active.engine, active.sessionId, active.workspacePath) : null;
@@ -595,6 +623,18 @@ function useChatTabHandlers({
       // Selecting any other tab dismisses the diff so the tab shows.
       closeDiff();
       const kind = tabKindOf(tabKey);
+      useProjectHomeStore.getState().deactivate();
+      if (kind === "project") {
+        dismissCenterSurfaces();
+        useProjectHomeStore.getState().activate(tabKey.slice(PROJECT_TAB_PREFIX.length));
+        return;
+      }
+      usePaperclipStore.getState().deactivate();
+      if (kind === "team") {
+        dismissCenterSurfaces();
+        usePaperclipStore.getState().activate();
+        return;
+      }
       if (kind === "hub") {
         clearActiveFile();
         deactivateBrowserTab();
@@ -669,6 +709,8 @@ function useChatTabHandlers({
         return;
       }
       const kind = tabKindOf(tabKey);
+      if (kind === "project") { useProjectHomeStore.getState().close(tabKey.slice(PROJECT_TAB_PREFIX.length)); return; }
+      if (kind === "team") { usePaperclipStore.getState().close(); return; }
       if (kind === "hub") {
         usePluginHubStore.getState().close();
         return;
@@ -713,7 +755,7 @@ function useChatTabHandlers({
       const kind = tabKindOf(draggedKey);
       if (kind !== tabKindOf(targetKey)) return;
       // 任务工作台、插件中心与版本更新说明是单实例页签，不参与拖拽排序。
-      if (kind === "mission" || kind === "board" || kind === "hub" || kind === "notes") return;
+      if (kind === "project" || kind === "mission" || kind === "team" || kind === "board" || kind === "hub" || kind === "notes") return;
       if (kind === "browser") {
         const draggedId = draggedKey.slice(BROWSER_TAB_PREFIX.length);
         const targetId = targetKey.slice(BROWSER_TAB_PREFIX.length);
@@ -755,8 +797,12 @@ function useChatTabHandlers({
   const closeKeys = useCallback(
     (keysToClose: string[]) => {
       const keysSet = new Set(keysToClose);
+      for (const path of useProjectHomeStore.getState().paths) {
+        if (keysSet.has(PROJECT_TAB_PREFIX + path)) useProjectHomeStore.getState().close(path);
+      }
       if (keysSet.has(DIFF_TAB_KEY)) closeDiff();
       if (keysSet.has(MISSION_WORKBENCH_TAB_KEY)) useMissionStore.getState().close();
+      if (keysSet.has(PAPERCLIP_TAB_KEY)) usePaperclipStore.getState().close();
       if (keysSet.has(AGENT_BOARD_TAB_KEY)) useAgentBoardStore.getState().close();
       if (keysSet.has(PLUGIN_HUB_TAB_KEY)) usePluginHubStore.getState().close();
       if (keysSet.has(RELEASE_NOTES_TAB_KEY)) useReleaseNotesTabStore.getState().close();

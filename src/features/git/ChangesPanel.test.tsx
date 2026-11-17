@@ -121,6 +121,23 @@ describe("ChangesPanel virtual rows", () => {
     vi.unstubAllGlobals();
   });
 
+  it("keeps commit drafts and late Git errors in their own repository", async () => {
+    const status = useGitStore.getState().statusByWorkspace["/repo"]!;
+    useGitStore.setState({ statusByWorkspace: { "/repo": status, "/other": status } });
+    act(() => Array.from(container.querySelectorAll("button")).find((button) => button.textContent === "write draft")!.click());
+    expect(container.querySelector("textarea")?.value).toBe("saved draft");
+    act(() => {
+      Array.from(container.querySelectorAll("button")).find((button) => button.textContent === "header pull")!.click();
+      root.render(<ChangesPanel workspacePath="/other" repoPath="/other" />);
+    });
+    await act(async () => {});
+    expect(container.querySelector("textarea")?.value).toBe("");
+    expect(container.textContent).not.toContain("pull failed");
+    act(() => root.render(<ChangesPanel workspacePath="/repo" repoPath="/repo" />));
+    expect(container.querySelector("textarea")?.value).toBe("saved draft");
+    expect(container.textContent).toContain("pull failed");
+  });
+
   it("bounds mounted rows and reaches the end through a single parent scroller", () => {
     expect(container.querySelectorAll("li").length).toBeGreaterThan(0);
     expect(container.querySelectorAll("li").length).toBeLessThan(60);

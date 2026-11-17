@@ -1,6 +1,6 @@
 import {
   memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState,
-  useSyncExternalStore, type RefObject,
+  useSyncExternalStore, type RefObject, type SetStateAction,
 } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useTranslation } from "react-i18next";
@@ -15,6 +15,7 @@ import { useFilesStore } from "@/features/files/store";
 import { resolveWorkspaceRepository } from "@/features/files/repositorySelection";
 import { useGitStore } from "./store";
 import { ChangesPanelHeader } from "./ChangesPanelHeader";
+import { GitHistoryPanel } from "./GitHistoryPanel";
 import { CommitFooter } from "./CommitFooter";
 import { buildGitTree, flattenGitTree } from "./git-tree";
 import {
@@ -75,14 +76,18 @@ function useGitViewMode() {
  *  start selected; a status refresh drops vanished paths and adopts files that
  *  became staged outside the panel (CLI, another window). The refresh adjust
  *  happens during render so a stale selection never reaches a committed frame. */
-function useChangesSelection(status: GitStatus | undefined) {
+function useChangesSelection(status: GitStatus | undefined, repository: string) {
   const stagedPaths = useMemo(() => status?.staged.map((f) => f.path) ?? [], [status]);
   const [selectedFiles, setSelectedFiles] = useState<Set<string>>(() => new Set(stagedPaths));
+  const [previousRepository, setPreviousRepository] = useState(repository);
   const [previousStaged, setPreviousStaged] = useState<string[]>(stagedPaths);
 
-  if (previousStaged !== stagedPaths) {
+  if (previousStaged !== stagedPaths || previousRepository !== repository) {
+    const changedRepository = previousRepository !== repository;
+    setPreviousRepository(repository);
     setPreviousStaged(stagedPaths);
     setSelectedFiles((prev) => {
+      if (changedRepository) return new Set(stagedPaths);
       const allCurrentPaths = new Set([
         ...stagedPaths,
         ...(status?.unstaged ?? []).map((f) => f.path),
@@ -141,6 +146,20 @@ function useChangesSelection(status: GitStatus | undefined) {
   return { selectedFiles, setSelectedFiles, toggleSelectFile, toggleSelectDir, toggleSelectGroup };
 }
 
+/** Keep drafts, confirmations and late async results attached to their repository. */
+function useRepositoryState<T>(path: string, initial: T) {
+  const [values, setValues] = useState<Record<string, T>>({});
+  const update = useCallback((next: SetStateAction<T>) => {
+    setValues((previous) => ({
+      ...previous,
+      [path]: typeof next === "function"
+        ? (next as (value: T) => T)(previous[path] ?? initial)
+        : next,
+    }));
+  }, [path]);
+  return [values[path] ?? initial, update] as const;
+}
+
 /** Mutations, their busy/error bookkeeping, and the commit-confirmation flow. */
 function useChangesActions(
   gitWorkspacePath: string,
@@ -148,34 +167,38 @@ function useChangesActions(
   selection: ReturnType<typeof useChangesSelection>,
 ) {
   const { selectedFiles, setSelectedFiles } = selection;
-  const [actionError, setActionError] = useState<string | null>(null);
-  const [pending, setPending] = useState<Record<string, true>>({});
-  const [commitMsg, setCommitMsg] = useState("");
+  const [actionError, setActionError] = useRepositoryState<string | null>(gitWorkspacePath, null);
+  const [pending, setPending] = useRepositoryState<Record<string, true>>(gitWorkspacePath, {});
+  const [commitMsg, setCommitMsg] = useRepositoryState(gitWorkspacePath, "");
+  const runningRepos = useRef(new Set<string>());
   /** Paths awaiting discard confirmation (one row or a whole group). */
-  const [discardTarget, setDiscardTarget] = useState<string[] | null>(null);
+  const [discardTarget, setDiscardTarget] = useRepositoryState<string[] | null>(gitWorkspacePath, null);
   /** Commit waiting on confirmation because it would unstage files the user
    *  staged but left unchecked — that reshuffles the index (e.g. hunks
    *  placed with `git add -p`), so it never happens silently. */
-  const [pendingCommitPlan, setPendingCommitPlan] = useState<{
+  const [pendingCommitPlan, setPendingCommitPlan] = useRepositoryState<{
     message: string;
     toStage: string[];
     toUnstage: string[];
-  } | null>(null);
+  } | null>(gitWorkspacePath, null);
 
   /** Runs a mutating action: tracks busy state, surfaces errors inline. */
   const run = useCallback((key: string, action: () => Promise<unknown>) => {
+    if (runningRepos.current.has(gitWorkspacePath)) return;
+    runningRepos.current.add(gitWorkspacePath);
     setPending((p) => ({ ...p, [key]: true }));
     setActionError(null);
-    void action()
+    void (async () => action())()
       .catch((err: unknown) => setActionError(errorText(err)))
       .finally(() => {
+        runningRepos.current.delete(gitWorkspacePath);
         setPending((p) => {
           const next = { ...p };
           delete next[key];
           return next;
         });
       });
-  }, []);
+  }, [gitWorkspacePath, setPending, setActionError]);
 
   /** Dismiss the header error. A failed refresh clears the status, so its
    *  reason lives in the body (StatusErrorState) until a re-read succeeds;
@@ -184,7 +207,7 @@ function useChangesActions(
   const dismissError = useCallback(() => {
     setActionError(null);
     if (status) useGitStore.getState().clearError(gitWorkspacePath);
-  }, [gitWorkspacePath, status]);
+  }, [gitWorkspacePath, status, setActionError]);
 
   const stage = useCallback(
     (files: string[]) => {
@@ -213,7 +236,7 @@ function useChangesActions(
   const stageOne = useCallback((file: string) => stage([file]), [stage]);
   const unstageOne = useCallback((file: string) => unstage([file]), [unstage]);
 
-  const discardRow = useCallback((file: string) => setDiscardTarget([file]), []);
+  const discardRow = useCallback((file: string) => setDiscardTarget([file]), [setDiscardTarget]);
   const confirmDiscard = useCallback(() => {
     if (discardTarget === null) return;
     run("discard", () => useGitStore.getState().discard(gitWorkspacePath, discardTarget));
@@ -324,6 +347,7 @@ export function ChangesPanel({
   className?: string;
   visible?: boolean;
 }) {
+  const [historyOpen, setHistoryOpen] = useState(false);
   const selectedPath = useFilesStore((s) => s.selectedPath);
   const repositories = useFilesStore((s) => s.repositories);
   const gitWorkspacePath = useMemo(
@@ -347,7 +371,7 @@ export function ChangesPanel({
   const scrollOffset = useRef(0);
 
   const { viewMode, toggleViewMode } = useGitViewMode();
-  const selection = useChangesSelection(status);
+  const selection = useChangesSelection(status, gitWorkspacePath);
   const {
     selectedFiles,
     toggleSelectFile,
@@ -391,6 +415,8 @@ export function ChangesPanel({
   const header = visible ? (
     <ChangesPanelHeader
       workspacePath={gitWorkspacePath}
+      onToggleHistory={() => setHistoryOpen((open) => !open)}
+      historyOpen={historyOpen}
       // Name the repository when the panel followed the file tree's
       // selection into a nested repo — otherwise a commit there looks
       // identical to one against the workspace root.
@@ -482,13 +508,16 @@ export function ChangesPanel({
               stagedCount={status?.staged.length ?? 0}
               selectedCount={selectedFiles.size}
               onCommitSelected={handleCommitSelected}
-              busy={pending.commit === true}
+              busy={Object.keys(pending).length > 0}
               commitMsg={commitMsg}
               onCommitMsgChange={setCommitMsg}
               run={run}
             />
           )}
         </>
+      )}
+      {visible && historyOpen && (
+        <GitHistoryPanel key={gitWorkspacePath} workspacePath={gitWorkspacePath} onClose={() => setHistoryOpen(false)} />
       )}
       <ChangesConfirmDialogs
         visible={visible}
@@ -623,7 +652,7 @@ function ChangesBody({
         onRowAction={unstageOne}
         onOpen={openStagedDiff}
         onRowContextMenu={onRowContextMenu}
-        actionBusy={pending.unstage === true}
+        actionBusy={Object.keys(pending).length > 0}
       />
       <GroupSection
         visible={visible}
@@ -647,7 +676,7 @@ function ChangesBody({
         onGroupDiscard={setDiscardTarget}
         onOpen={openUnstagedDiff}
         onRowContextMenu={onRowContextMenu}
-        actionBusy={pending.stage === true}
+        actionBusy={Object.keys(pending).length > 0}
       />
       <GroupSection
         visible={visible}
@@ -671,7 +700,7 @@ function ChangesBody({
         onGroupDiscard={setDiscardTarget}
         onOpen={openUnstagedDiff}
         onRowContextMenu={onRowContextMenu}
-        actionBusy={pending.stage === true}
+        actionBusy={Object.keys(pending).length > 0}
         isNew
       />
     </>

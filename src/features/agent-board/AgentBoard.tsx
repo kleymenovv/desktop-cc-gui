@@ -29,7 +29,7 @@ import {
 } from "@/lib/ipc";
 import i18n from "@/lib/i18n";
 import { cx } from "@/utils/cx";
-import { focusAgentSession, focusNextWaitingAgent } from "./actions";
+import { expandAgentSession, focusAgentSession, focusNextWaitingAgent } from "./actions";
 import {
   agentStatus,
   digestSession,
@@ -183,9 +183,11 @@ export function AgentBoard({
 }) {
   const { t } = useTranslation();
   const cards = useAgentCards();
-  const { filter, search, selectedKey, setFilter, setSearch, select } = useAgentBoardStore(
+  const { filter, search, project, setProject, selectedKey, setFilter, setSearch, select } = useAgentBoardStore(
     useShallow((s) => ({
       filter: s.filter,
+      project: s.project,
+      setProject: s.setProject,
       search: s.search,
       selectedKey: s.selectedKey,
       setFilter: s.setFilter,
@@ -196,6 +198,25 @@ export function AgentBoard({
   const nextShortcut = useShortcutsStore((s) => s.values.nextWaitingAgentShortcut);
   const now = useNow(cards.some((card) => card.status === "running"));
   const [detailWidth, setDetailWidth] = useState(initialDetailWidth);
+  const projects = useMemo(() => {
+    const names = new Map(workspaces.map((workspace) => [workspace.path, workspace.name || basename(workspace.path)]));
+    for (const card of cards) names.set(card.tab.workspacePath, card.workspaceName);
+    return Array.from(names);
+  }, [cards, workspaces]);
+  const scopedCards = useMemo(() => cards.filter((card) => !project || card.tab.workspacePath === project), [cards, project]);
+  useEffect(() => {
+    if (project && !projects.some(([path]) => path === project)) setProject("");
+  }, [project, projects, setProject]);
+  useEffect(() => {
+    if (selectedKey && !cards.some((card) => card.key === selectedKey)) {
+      // The first send replaces a draft key with the engine's session id.
+      const active = useChatStore.getState().active;
+      const draftKey = active && sessionKey(active.engine, null, active.workspacePath);
+      select(active && selectedKey === draftKey
+        ? sessionKey(active.engine, active.sessionId, active.workspacePath)
+        : null);
+    }
+  }, [cards, selectedKey, select]);
 
   // Persist after the drag settles instead of on every pointermove.
   useEffect(() => {
@@ -207,26 +228,26 @@ export function AgentBoard({
 
   const counts = useMemo(() => {
     const result: Record<Column, number> = { waiting: 0, running: 0, done: 0, error: 0 };
-    for (const card of cards) result[columnOf(card.status)]++;
+    for (const card of scopedCards) result[columnOf(card.status)]++;
     return result;
-  }, [cards]);
+  }, [scopedCards]);
 
   const visible = useMemo(() => {
     const query = search.trim().toLowerCase();
-    if (!query) return cards;
-    return cards.filter((card) =>
+    if (!query) return scopedCards;
+    return scopedCards.filter((card) =>
       [card.title, card.digest?.task, card.workspaceName, card.branch]
         .filter(Boolean)
         .join(" ")
         .toLowerCase()
         .includes(query),
     );
-  }, [cards, search]);
+  }, [scopedCards, search]);
 
   const columns = filter === "all" ? COLUMNS : COLUMNS.filter((column) => column === filter);
   const selected = cards.find((card) => card.key === selectedKey) ?? null;
   const filters: Array<{ id: AgentBoardFilter; label: string; count: number }> = [
-    { id: "all", label: t("agentBoard.filterAll"), count: cards.length },
+    { id: "all", label: t("agentBoard.filterAll"), count: scopedCards.length },
     { id: "waiting", label: t("agentBoard.colWaiting"), count: counts.waiting },
     { id: "running", label: t("agentBoard.colRunning"), count: counts.running },
     { id: "done", label: t("agentBoard.colDone"), count: counts.done },
@@ -242,16 +263,28 @@ export function AgentBoard({
             <h1 className="text-title-2-medium text-text-primary">{t("agentBoard.title")}</h1>
             <p className="mt-1 text-body-2-regular text-text-tertiary">{t("agentBoard.subtitle")}</p>
           </div>
-          <Button
-            size="small"
-            variant="secondary"
-            leadingIcon={Hand}
-            disabled={counts.waiting === 0}
-            onClick={() => focusNextWaitingAgent()}
-          >
-            {t("agentBoard.nextWaiting")}
-            {shortcutLabel && <Kbd className="ml-1.5">{shortcutLabel}</Kbd>}
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button size="small" variant="secondary" disabled={workspaces.length === 0}
+              onClick={() => {
+                const path = project || selected?.tab.workspacePath || workspaces[0]?.path;
+                if (!path) return;
+                startNewChat(path);
+                const active = useChatStore.getState().active;
+                if (active) select(sessionKey(active.engine, active.sessionId, active.workspacePath));
+              }}>
+              {t("chat.newSession")}
+            </Button>
+            <Button
+              size="small"
+              variant="secondary"
+              leadingIcon={Hand}
+              disabled={counts.waiting === 0}
+              onClick={() => focusNextWaitingAgent(project || undefined)}
+            >
+              {t("agentBoard.nextWaiting")}
+              {shortcutLabel && <Kbd className="ml-1.5">{shortcutLabel}</Kbd>}
+            </Button>
+          </div>
         </header>
 
         <div className="flex flex-wrap items-center gap-2 px-6 pt-5">
@@ -274,6 +307,15 @@ export function AgentBoard({
               <span className="tabular-nums opacity-70">{item.count}</span>
             </button>
           ))}
+          <select
+            aria-label={t("agentBoard.project")}
+            value={project}
+            onChange={(event) => setProject(event.target.value)}
+            className="max-w-48 rounded-md border border-border-button-default bg-background-primary-default px-2 py-1.5 text-body-2-regular text-text-secondary"
+          >
+            <option value="">{t("agentBoard.allProjects")}</option>
+            {projects.map(([path, name]) => <option key={path} value={path}>{name}</option>)}
+          </select>
           <input
             value={search}
             onChange={(event) => setSearch(event.target.value)}
@@ -325,6 +367,7 @@ export function AgentBoard({
       </div>
       {selected && (
         <AgentDetail
+          key={selected.key}
           card={selected}
           now={now}
           onClose={() => select(null)}
@@ -371,8 +414,8 @@ function AgentCardView({
       onClick={onSelect}
       onDoubleClick={() => focusAgentSession(card.tab)}
       onKeyDown={(event) => {
-        if (event.key === "Enter") focusAgentSession(card.tab);
-        if (event.key === " ") {
+        if (event.key === "Enter" && event.target === event.currentTarget) { event.preventDefault(); onSelect(); }
+        if (event.key === " " && event.target === event.currentTarget) {
           event.preventDefault();
           onSelect();
         }
@@ -485,7 +528,7 @@ function CardState({ card }: { card: AgentCard }) {
     const detail = !card.retrying && activity?.kind === "tool" ? activity.detail : null;
     return (
       <div className="flex min-w-0 items-start gap-2 rounded-lg bg-background-secondary-default px-2.5 py-2">
-        <span className="mt-1.5 size-1.5 shrink-0 animate-pulse rounded-full bg-status-green-text" />
+        <span className="mt-1.5 size-1.5 shrink-0 motion-safe:animate-pulse rounded-full bg-status-green-text" />
         <div className="min-w-0 text-caption-1-regular">
           <span className="text-text-primary">{label}</span>
           {detail && (
@@ -597,21 +640,15 @@ function AgentDetail({
   const [resizing, setResizing] = useState(false);
   const composerRef = useRef<ComposerInputHandle | null>(null);
 
+  const resizeRef = useRef<{ startX: number; startWidth: number } | null>(null);
+
   const startResize = (event: React.PointerEvent<HTMLDivElement>) => {
     event.preventDefault();
     const startX = event.clientX;
     const startWidth = width;
     setResizing(true);
-    const onMove = (moveEvent: PointerEvent) => {
-      onResize(startWidth - (moveEvent.clientX - startX));
-    };
-    const onUp = () => {
-      window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("pointerup", onUp);
-      setResizing(false);
-    };
-    window.addEventListener("pointermove", onMove);
-    window.addEventListener("pointerup", onUp);
+    event.currentTarget.setPointerCapture(event.pointerId);
+    resizeRef.current = { startX, startWidth };
   };
 
   // Selecting a card opens that session: keep the global active tab in sync
@@ -640,9 +677,23 @@ function AgentDetail({
       <div
         role="separator"
         aria-orientation="vertical"
+        tabIndex={0}
+        aria-valuenow={width}
+        onKeyDown={(event) => {
+          if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+            event.preventDefault();
+            onResize(width + (event.key === "ArrowLeft" ? 24 : -24));
+          }
+        }}
         aria-label={t("agentBoard.resizePanel")}
         title={t("agentBoard.resizePanel")}
         onPointerDown={startResize}
+        onPointerMove={(event) => {
+          const drag = resizeRef.current;
+          if (drag) onResize(drag.startWidth - (event.clientX - drag.startX));
+        }}
+        onPointerUp={(event) => event.currentTarget.releasePointerCapture(event.pointerId)}
+        onLostPointerCapture={() => { resizeRef.current = null; setResizing(false); }}
         onDoubleClick={() => onResize(DETAIL_WIDTH_DEFAULT)}
         className={cx(
           "absolute inset-y-0 -left-1 z-10 w-2 cursor-col-resize touch-none",
@@ -665,7 +716,7 @@ function AgentDetail({
           iconOnly
           leadingIcon={ExternalLink}
           aria-label={t("agentBoard.openSession")}
-          onClick={() => focusAgentSession(card.tab)}
+          onClick={() => expandAgentSession(card.tab)}
         />
         <Button size="xs" variant="ghost" iconOnly leadingIcon={X} aria-label={t("agentBoard.close")} onClick={onClose} />
       </div>

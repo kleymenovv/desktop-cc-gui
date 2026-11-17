@@ -72,7 +72,7 @@ describe("ChangesPanelHeader refresh feedback", () => {
     vi.useRealTimers();
   });
 
-  async function render(branches: BranchInfo[] = []) {
+  async function render(branches: BranchInfo[] = [], pending: Record<string, true> = {}) {
     const nextRoot = createRoot(container);
     root = nextRoot;
     await act(async () => {
@@ -84,7 +84,7 @@ describe("ChangesPanelHeader refresh feedback", () => {
           ahead={0}
           behind={0}
           branches={branches}
-          pending={{}}
+          pending={pending}
           error={null}
           run={(_key, action) => {
             void action().catch(() => undefined);
@@ -116,6 +116,13 @@ describe("ChangesPanelHeader refresh feedback", () => {
     });
     return { promise, resolve };
   }
+
+  it("names the pending operation and blocks conflicting network actions", async () => {
+    await render([], { push: true });
+    expect(container.querySelector('[role="status"]')?.textContent).toContain("推送");
+    expect(container.querySelector<HTMLButtonElement>('button[aria-label="抓取"]')?.disabled).toBe(true);
+    expect(container.querySelector<HTMLButtonElement>('button[aria-label="推送"]')?.disabled).toBe(true);
+  });
 
   it("checks out a remote branch picked from the search list", async () => {
     await render([

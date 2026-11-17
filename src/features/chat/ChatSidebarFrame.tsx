@@ -38,8 +38,7 @@ export function ChatSidebarFrame({
   onNewBrowser,
   onOpenPlugins,
   onOpenMission,
-  onOpenAgentBoard,
-  agentBoardBadge,
+  onOpenPaperclip,
   onReorderWorkspaces,
   onDropWorkspaceToSection,
   onCreateGroup,
@@ -76,9 +75,8 @@ export function ChatSidebarFrame({
   onOpenPlugins?: () => void;
   /** 任务工作台入口（原生中心页签）。 */
   onOpenMission?: () => void;
-  /** Agent board entry (native center tab) and its waiting-agents count. */
-  onOpenAgentBoard?: () => void;
-  agentBoardBadge?: string | null;
+  /** Paperclip persistent team entry. */
+  onOpenPaperclip?: () => void;
   onReorderWorkspaces: (orderedIds: string[]) => void;
   /** Workspace row dropped onto a group / 已归档 / ungrouped container. */
   onDropWorkspaceToSection: (workspaceId: string, targetSectionId: string | null) => void;
@@ -125,8 +123,7 @@ export function ChatSidebarFrame({
         onNewBrowser={onNewBrowser}
         onOpenPlugins={onOpenPlugins}
         onOpenMission={onOpenMission}
-        onOpenAgentBoard={onOpenAgentBoard}
-        agentBoardBadge={agentBoardBadge}
+        onOpenPaperclip={onOpenPaperclip}
         onReorderWorkspaces={onReorderWorkspaces}
         onDropWorkspaceToSection={onDropWorkspaceToSection}
         onCreateGroup={onCreateGroup}

@@ -1,3 +1,5 @@
+import { openProjectHome } from "@/features/project-home/actions";
+import PanelsTopLeft from "lucide-react/dist/esm/icons/panels-top-left";
 "use client";
 
 import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent, ReactNode } from "react";
@@ -96,7 +98,7 @@ function ThreadHoverActions({
   if (!onAction) return null;
   const iconClass = "text-foreground-icon-secondary hover:text-foreground-icon-primary";
   return (
-    <span className="hidden shrink-0 items-center gap-1.5 group-hover:inline-flex">
+    <span className="hidden shrink-0 items-center gap-1.5 group-hover:inline-flex group-focus-within:inline-flex">
       {!isDraft && (
         <button
           type="button"
@@ -389,8 +391,9 @@ function RepoHeaderRow({
           </span>
         )}
       </button>
+      {repo.path && <button type="button" aria-label={`${t("projectHome.open")}: ${repo.label}`} title={t("projectHome.open")} onClick={() => openProjectHome(repo.path!)} className="ml-auto shrink-0 cursor-pointer rounded p-1 text-foreground-icon-secondary hover:bg-background-secondary-hover hover:text-foreground-icon-primary"><PanelsTopLeft className="size-3.5" aria-hidden /></button>}
       {hasHoverActions && (
-        <span className="ml-auto hidden shrink-0 items-center gap-1.5 group-hover:inline-flex">
+        <span className="ml-auto hidden shrink-0 items-center gap-1.5 group-hover:inline-flex group-focus-within:inline-flex">
           {repo.id && onNewSession && (
             <button
               type="button"
@@ -510,6 +513,7 @@ function WorktreeChildRow({
           {t("worktree.missingDirectory")}
         </span>
       )}
+      {repo.path && !missing && <button type="button" aria-label={`${t("projectHome.open")}: ${repo.label}`} title={t("projectHome.open")} onClick={() => openProjectHome(repo.path!)} className="shrink-0 cursor-pointer rounded p-1 text-foreground-icon-secondary hover:text-foreground-icon-primary"><PanelsTopLeft className="size-3.5" aria-hidden /></button>}
       {repo.id && onNewSession && (
         <button
           type="button"
@@ -519,7 +523,7 @@ function WorktreeChildRow({
             event.stopPropagation();
             onNewSession(repo.id!);
           }}
-          className="hidden shrink-0 cursor-pointer items-center text-foreground-icon-secondary group-hover:inline-flex hover:text-foreground-icon-primary"
+          className="hidden shrink-0 cursor-pointer items-center text-foreground-icon-secondary group-hover:inline-flex group-focus-within:inline-flex hover:text-foreground-icon-primary"
         >
           <Plus className="size-4" aria-hidden />
         </button>

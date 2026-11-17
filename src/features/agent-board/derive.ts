@@ -112,6 +112,27 @@ export function waitingTabs(
   });
 }
 
+/** Sidebar counts use the cheap cached question scan, without deriving tools,
+ * markdown, edited files or timelines on every streaming token. */
+export function activityCounts(input: {
+  openTabs: ActiveSession[];
+  bySession: Record<string, SessionState>;
+  streamingByKey: Record<string, boolean>;
+  retryingByKey: Record<string, boolean>;
+  unseen: Record<string, boolean>;
+}) {
+  const counts = { running: 0, waiting: 0, error: 0, done: 0 };
+  for (const tab of input.openTabs) {
+    const key = sessionKey(tab.engine, tab.sessionId, tab.workspacePath);
+    const session = input.bySession[key];
+    if (session?.messages.length && cachedAsk(session.messages)) counts.waiting++;
+    else if (input.streamingByKey[key] || input.retryingByKey[key]) counts.running++;
+    else if (session?.error) counts.error++;
+    else if (input.unseen[key]) counts.done++;
+  }
+  return counts;
+}
+
 function collapse(text: string): string {
   return text.replace(/\s+/g, " ").trim();
 }

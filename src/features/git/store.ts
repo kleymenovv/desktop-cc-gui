@@ -85,6 +85,9 @@ export const useGitStore = create<GitStore>((set, get) => {
       get()
         .refresh(workspacePath, true)
         .catch(() => undefined);
+      if (get().logByWorkspace[workspacePath]) {
+        void get().loadLog(workspacePath).catch(() => undefined);
+      }
       // The file tree's git badges/colors are stale after any mutation
       // (commit/stage/checkout); refreshTree re-walks every loaded level.
       // 动态引入避免与 files/store 的模块环：文件抢到中心时也要关差异页签。
@@ -175,7 +178,6 @@ export const useGitStore = create<GitStore>((set, get) => {
     pullFrom: async (workspacePath, remote, branch) => {
       await runMutation(workspacePath, () => ipc.gitPullFrom(workspacePath, remote, branch));
       await get().loadBranches(workspacePath);
-      get().loadLog(workspacePath).catch(() => undefined);
     },
 
     loadLog: async (workspacePath, limit = 160) => {
@@ -187,6 +189,7 @@ export const useGitStore = create<GitStore>((set, get) => {
         if (isNotARepo(err)) {
           set(notRepoPatch(workspacePath));
         }
+        throw err;
       }
     },
 
@@ -201,12 +204,10 @@ export const useGitStore = create<GitStore>((set, get) => {
     push: async (workspacePath) => {
       await runMutation(workspacePath, () => ipc.gitPush(workspacePath));
       await get().loadBranches(workspacePath);
-      get().loadLog(workspacePath).catch(() => undefined);
     },
     pull: async (workspacePath) => {
       await runMutation(workspacePath, () => ipc.gitPull(workspacePath));
       await get().loadBranches(workspacePath);
-      get().loadLog(workspacePath).catch(() => undefined);
     },
     checkout: async (workspacePath, branch) => {
       await runMutation(workspacePath, () => ipc.gitCheckout(workspacePath, branch));

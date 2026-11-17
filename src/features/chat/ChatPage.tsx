@@ -1,3 +1,5 @@
+import { useProjectHomeStore } from "@/features/project-home/store";
+import { projectForFile } from "@/features/project-home/model";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useChatStore } from "./store";
@@ -7,8 +9,7 @@ import { AppStatusBar } from "@/components/application/app-status-bar/app-status
 import { isWeb } from "@/lib/platform";
 import { useTitlebarStyle } from "@/features/settings/titlebar";
 import { useBetaFeature } from "@/features/settings/beta-features";
-import { openAgentBoard } from "@/features/agent-board/actions";
-import { waitingTabs } from "@/features/agent-board/derive";
+import { openPaperclipTeam } from "@/features/paperclip/actions";
 import PanelLeftOpen from "lucide-react/dist/esm/icons/panel-left-open";
 import { TerminalDock } from "@/features/terminal/TerminalDock";
 import { useTerminalStore } from "@/features/terminal/store";
@@ -196,13 +197,7 @@ export default function ChatPage() {
   // 内测功能（设置 → 其他 → 内测功能，默认关闭）：入口按开关显示/隐藏。
   const betaNewBrowser = useBetaFeature("newBrowser");
   const betaMissionWorkbench = useBetaFeature("missionWorkbench");
-  // Sidebar badge: agents blocked on the user. A number, so ChatPage
-  // re-renders only when the count changes, not on every stream flush.
-  const waitingAgents = useChatStore((s) => waitingTabs(s.openTabs, s.bySession).length);
-  const handleOpenAgentBoard = useCallback(() => {
-    openAgentBoard();
-    collapseSidebarOnMobile();
-  }, [collapseSidebarOnMobile]);
+
 
   // ⌘W: close the tab in view, same path as the tab strip's × (a dirty file
   // still routes through the save-confirm dialog — unsaved edits are never
@@ -211,9 +206,12 @@ export default function ChatPage() {
     if (activeTabKey) handleTabClose(activeTabKey);
   }, [activeTabKey, handleTabClose]);
 
-  useChatPageLifecycle(init, gitRefresh, active?.workspacePath);
+  const projectPath = useProjectHomeStore((s) => s.activePath);
+  const projectPaths = useProjectHomeStore((s) => s.paths);
+  const workspacePath = projectPath ?? diffView?.workspacePath ?? projectForFile(activeFilePath, projectPaths) ?? active?.workspacePath;
+  useChatPageLifecycle(init, gitRefresh, workspacePath);
   useChatShortcutHandlers(
-    active?.workspacePath,
+    workspacePath,
     toggleTerminal,
     handleNewSession,
     closeActiveTab,
@@ -261,8 +259,7 @@ export default function ChatPage() {
         onNewBrowser={!isWeb && betaNewBrowser ? handleNewBrowser : undefined}
         onOpenPlugins={handleOpenPlugins}
         onOpenMission={betaMissionWorkbench ? handleOpenMission : undefined}
-        onOpenAgentBoard={handleOpenAgentBoard}
-        agentBoardBadge={waitingAgents > 0 ? String(waitingAgents) : null}
+        onOpenPaperclip={isWeb ? undefined : openPaperclipTeam}
         onReorderWorkspaces={handleReorderWorkspaces}
         onDropWorkspaceToSection={handleDropWorkspaceToSection}
         onCreateGroup={handleCreateGroup}
@@ -298,9 +295,9 @@ export default function ChatPage() {
             ) : undefined
           }
           actions={
-            active ? (
+            workspacePath && !projectPath ? (
               <ChatPanelHeader
-                workspacePath={active.workspacePath}
+                workspacePath={workspacePath}
                 panelTab={panelTab}
                 onPanelTabChange={setPanelTab}
                 panelCollapsed={panelCollapsedEffective}
@@ -353,16 +350,17 @@ export default function ChatPage() {
           />
           <ChatSidePanel
             active={active}
+            workspacePath={workspacePath}
             panelRef={panelRef}
             panelWidth={panelWidthEffective}
-            panelCollapsed={panelCollapsedEffective}
+            panelCollapsed={panelCollapsedEffective || projectPath !== null}
             dragging={dragging}
             panelTab={panelTab}
             onResizeStart={handleResizeStart("panel")}
             overlay={panelOverlay}
           />
         </div>
-        {active && <TerminalDock workspacePath={active.workspacePath} />}
+        {workspacePath && <TerminalDock workspacePath={workspacePath} />}
         <AppStatusBar />
       </div>
 

@@ -1,5 +1,10 @@
 # Desktop automation in CC GUI
 
+The integration is maintained in the main `ccgui` checkout together with Paperclip.
+The sibling `ccgui-install-build` worktree contains its earlier implementation;
+do not use an older checkout to replace the installed app without reconciling
+both feature sets. Build and stage updates from this checkout.
+
 The pointer button beside the composer permits computer use for **one message**.
 Send the task normally; the agent chooses whether to call the desktop tools.
 The permission resets after submission or a conversation/engine switch. Queued

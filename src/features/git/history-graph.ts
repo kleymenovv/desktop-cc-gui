@@ -72,8 +72,13 @@ export function computeGraph(commits: GitCommit[]): GraphLayout {
         active[lane] = commit.id;
       }
     }
+    // Consume this tip. A converged parent already has a lane; reserving it
+    // twice leaves ghost lanes behind and makes repeated merges grow forever.
+    active[lane] = null;
     const firstParent = commit.parents[0];
-    active[lane] = firstParent && rowById.has(firstParent) ? firstParent : null;
+    if (firstParent && rowById.has(firstParent) && !active.includes(firstParent)) {
+      active[lane] = firstParent;
+    }
     for (const parent of commit.parents.slice(1)) {
       if (!rowById.has(parent) || active.includes(parent)) continue;
       const free = active.indexOf(null);

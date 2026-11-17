@@ -439,7 +439,7 @@ describe("SettingsPage capabilities rail", () => {
     expect(capabilitiesAt).toBeGreaterThan(cliAt);
     expect(workspaceAt).toBeGreaterThan(capabilitiesAt);
 
-    // Skills, MCP and computer use share the same visible capability group.
+    // Skills, MCP and computer use share the static capabilities group.
     expect(itemsUnder("settings.groupCapabilities")).toEqual([
       i18n.t("settings.skills"),
       i18n.t("settings.mcp"),

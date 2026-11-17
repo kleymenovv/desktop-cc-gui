@@ -366,3 +366,35 @@ an empty URL is refused, and that Escape cancels. Also measures the two pencils:
 both glyph and padding are in `em`, so the name pencil must track the 14px name
 line and the URL pencil the 11px code line (and the interface font / zoom with
 them), not a fixed pixel box. No app, no backend, no real config file.
+
+Open `/tests/browser/paperclip-team.html` for the production Paperclip team
+interface against an in-memory API. Use `?theme=dark&view=agents`,
+`?view=settings`, `?detail=1` or `?lang=en`. Check task creation, task detail,
+comments, narrow-window layout and service settings. No native service is
+installed, no model is called and no real Paperclip data is modified by this
+fixture. Native worker power assertions and live API contracts require the
+separate native checks; this fixture is not evidence of closed-lid operation.
+
+The Paperclip fixture also supports `?view=projects`, `?view=goals`,
+`?view=approvals`, `?view=routines` and `?view=budgets`. Agent names open
+the native settings editor. Check the organization and project filters: their
+triggers must use the host Select surface, with a checkmark on the selected
+option. The Role menu has more than eight items: search for Quality assurance,
+press ArrowDown and Enter, then reopen and clear the search. No visible native
+select may remain. In Routines, create a paused routine, save a schedule twice
+and verify that the second save updates it; closing the editor before a late
+canonical read must not reopen it. All of these operations are fixture-only.
+
+Paperclip 用量：在 `paperclip-team.html` 切到「用量与限额」，检查账号剩余/重置、未知窗口不显示满额、今天/7天/UTC月度与 Agent 筛选，以及小屏横向表格滚动。配额按钮仅使用内存 fixture，不访问 CLI 登录或真实订阅。
+
+输入框电脑操控按钮：`composer-footer-repro.html?computerUse=1&lang=ru` 使用真实 ConversationFooter 与内存支持能力。点击「Компьютер」切换下一消息授权，不改任务文字；真正聊天在发送后、切会话或引擎时清除该权限。fixture 不启动驱动、不截屏、不注入系统输入。
+
+Paperclip 任务分栏：`paperclip-team.html?lang=ru` 选择任务后拖动竖分隔条，应同步调整列表和讨论宽度，评论草稿保持原样；重开恢复宽度、双击复位、左右方向键调整，窄容器显示单详情。启用「Отправить」后检查文本与图标均继承基础主按钮白色。
+
+Paperclip 实时执行：`paperclip-team.html?lang=ru&live=1` 打开任务，查看消息增量、思考摘要、工具进行 / 失败 / 完成与耗时；输入评论后等更新，草稿必须保留。流区上翻不能被新事件拉回底部，切任务不能混入前一任务事件。fixture 只提供模拟事件，不启动真实 Agent。
+
+Paperclip fixture: append `&sidebar=1&detail=1&live=1` to inspect the persistent team / board status markers alongside the task details and global scrollbar styling. Uses mock data only.
+
+Unified project preview: `paperclip-team.html?home=1&lang=ru&theme=dark&live=1` renders the production four-section project view against in-memory task, session, directory and Git data. Switch sections, expand a team task, open task details, navigate directories, and verify task drafts survive section switches. No native files or repositories are changed.
+
+Responsive checks: constrain the fixture wrapper to 360 / 600 / 900 / 1400px inside a wide browser window to exercise container queries independently of viewport media queries. With a task detail already selected, open a new task: its form must remain visible; fields must not overlap, submit text must fit, and all four project section buttons must remain visible. Also inspect the nine team sections at 480px.

@@ -1,3 +1,6 @@
+import { PROJECT_TAB_PREFIX, useProjectHomeStore } from "@/features/project-home/store";
+import { openProjectHome } from "@/features/project-home/actions";
+import { usePaperclipStore } from "@/features/paperclip/store";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -73,6 +76,7 @@ let container: HTMLDivElement;
 let root: Root;
 
 beforeEach(() => {
+  useProjectHomeStore.setState({ paths: [], activePath: null });
   useChatStore.setState({
     active: null,
     openTabs: [],
@@ -294,4 +298,23 @@ describe("useChatTabs branch tab label", () => {
     expect(text("labels")).toBe("数学 (fork #1)");
     expect(text("labels")).not.toBe(i18n.t("chat.newChat"));
   });
+});
+
+
+it("routes project tabs through selection, close-inactive and close-all without losing their identities", () => {
+  let current: UseChatTabsResult;
+  function ProjectProbe() { current = useChatTabs({ setDialog: () => {} }); return null; }
+  openProjectHome("/code/one");
+  openProjectHome("/code/two");
+  act(() => root.render(<ProjectProbe />));
+  expect(current!.tabItems.map((tab) => tab.key)).toContain(PROJECT_TAB_PREFIX + "/code/one");
+  expect(current!.activeTabKey).toBe(PROJECT_TAB_PREFIX + "/code/two");
+  act(() => current!.handleTabSelect(PROJECT_TAB_PREFIX + "/code/one"));
+  expect(useProjectHomeStore.getState().activePath).toBe("/code/one");
+  expect(usePaperclipStore.getState().active).toBe(false);
+  act(() => current!.handleTabCloseInactive());
+  expect(useProjectHomeStore.getState().paths).toEqual(["/code/one"]);
+  act(() => current!.handleTabCloseAll());
+  expect(useProjectHomeStore.getState().paths).toEqual([]);
+  expect(useProjectHomeStore.getState().activePath).toBeNull();
 });

@@ -818,3 +818,11 @@ function worktreeDisclosure(): HTMLElement {
   if (!region) throw new Error("no worktree group disclosure");
   return region;
 }
+
+it("omits the retired standalone agent board from primary navigation", async () => {
+  await act(async () => root.render(<AiChatSidebar />));
+  const navLabels = [...node.querySelectorAll("nav button")].map((button) => button.getAttribute("aria-label"));
+  expect(navLabels).toContain("chat.newSession");
+  expect(navLabels).toContain("plugins.hub.title");
+  expect(navLabels).not.toContain("agentBoard.title");
+});

@@ -1,3 +1,4 @@
+import { useProjectHomeStore } from "@/features/project-home/store";
 import { create } from "zustand";
 import { useBrowserStore } from "@/features/browser/store";
 import { useGitStore } from "@/features/git/store";
@@ -7,6 +8,7 @@ import { usePluginTabsStore } from "@/features/plugins/runtime/center-tabs";
 import { useChatStore } from "@/features/chat/store";
 import { useReleaseNotesTabStore } from "@/features/update/notes-tab";
 import { useAgentBoardStore } from "@/features/agent-board/store";
+import { usePaperclipStore } from "@/features/paperclip/store";
 import {
   ipc,
   type DirEntry,
@@ -265,12 +267,14 @@ interface FilesStore {
  *  搜索和插件桥直接调 openFile 时同样得切过去——否则编辑器页签亮了，画面还
  *  停在上一个面。 */
 function dismissNonFileSurfaces() {
+  useProjectHomeStore.getState().deactivate();
   useGitStore.getState().closeDiff();
   useBrowserStore.getState().deactivate();
   usePluginTabsStore.getState().deactivate();
   usePluginHubStore.getState().deactivate();
   useMissionStore.getState().deactivate();
   useAgentBoardStore.getState().deactivate();
+  usePaperclipStore.getState().deactivate();
   useReleaseNotesTabStore.getState().deactivate();
 }
 

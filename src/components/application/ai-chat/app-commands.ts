@@ -125,13 +125,12 @@ export function appCommandEntries(): SlashCommandEntry[] {
       source: "app",
       kind: "app",
     },
-    // 电脑操控入口：暂时隐藏（输入框仍可手动输入 /ccgui-cua），恢复时取消注释。
-    // {
-    //   name: "ccgui-cua",
-    //   description: i18n.t("chat.slashAppCua"),
-    //   source: "app",
-    //   kind: "app",
-    // },
+    {
+      name: "ccgui-cua",
+      description: i18n.t("chat.slashAppCua"),
+      source: "app",
+      kind: "app",
+    },
   ];
 }
 

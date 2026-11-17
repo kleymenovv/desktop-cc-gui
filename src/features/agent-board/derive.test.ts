@@ -1,7 +1,8 @@
+import { sessionKey } from "@/features/chat/store/persistence";
 import { describe, expect, it } from "vitest";
 import type { Message } from "@/lib/ipc";
 import type { SessionState } from "@/features/chat/store/stream";
-import { agentStatus, digestSession, waitingTabs } from "./derive";
+import { activityCounts, agentStatus, digestSession, waitingTabs } from "./derive";
 
 let seq = 0;
 const msg = (role: string, text: string, extra: Partial<Message> = {}): Message => ({
@@ -125,4 +126,23 @@ describe("agent board status", () => {
     const tabs = [open, { engine: "claude", sessionId: "b", workspacePath: "/w" }];
     expect(waitingTabs(tabs, bySession)).toEqual([open]);
   });
+});
+
+
+it("counts sidebar activity with the same waiting/running/error/unread priority", () => {
+  const tabs = ["waiting", "running", "retrying", "error", "done", "idle"].map((id) => ({
+    engine: "codex" as const, sessionId: id, workspacePath: "/project",
+  }));
+  // Use the same key factory as live sessions, including workspace identity.
+  const keys = tabs.map((tab) => sessionKey(tab.engine, tab.sessionId, tab.workspacePath));
+  const sessions = Object.fromEntries(keys.map((key) => [key, session([msg("user", "task")])]));
+  sessions[keys[0]] = session([msg("grant", "Allow?", { grant: { status: "pending" } })], { error: "old failure" });
+  sessions[keys[1]] = session([], { error: "old failure" });
+  sessions[keys[3]] = session([], { error: "failed" });
+  expect(activityCounts({
+    openTabs: tabs, bySession: sessions,
+    streamingByKey: { [keys[0]]: true, [keys[1]]: true },
+    retryingByKey: { [keys[2]]: true },
+    unseen: { [keys[0]]: true, [keys[1]]: true, [keys[3]]: true, [keys[4]]: true },
+  })).toEqual({ waiting: 1, running: 2, error: 1, done: 1 });
 });

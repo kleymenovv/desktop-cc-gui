@@ -8,6 +8,7 @@ import type { ActiveSession } from "./store";
 
 export function ChatSidePanel({
   active,
+  workspacePath: explicitWorkspacePath,
   panelRef,
   panelWidth,
   panelCollapsed,
@@ -17,6 +18,7 @@ export function ChatSidePanel({
   overlay = false,
 }: {
   active: ActiveSession | null;
+  workspacePath?: string;
   panelRef: React.RefObject<HTMLDivElement>;
   panelWidth: number;
   panelCollapsed: boolean;
@@ -29,8 +31,9 @@ export function ChatSidePanel({
   const panelTabs = useSortedPanelTabs();
   // Persisted tab may point at an unloaded plugin tab; fall back to the
   // first tab so the sidebar never renders fully hidden (read-side only).
-  const activeTab = active ? resolveActivePanelTab(panelTabs, panelTab) : undefined;
-  if (!active) return null;
+  const workspacePath = explicitWorkspacePath ?? active?.workspacePath;
+  const activeTab = workspacePath ? resolveActivePanelTab(panelTabs, panelTab) : undefined;
+  if (!workspacePath) return null;
   return (
     <div
       ref={panelRef}
@@ -77,9 +80,9 @@ export function ChatSidePanel({
         {panelTabs.map((tab) => {
           const TabComponent = tab.component;
           const panel = tab.id === "changes" && TabComponent === ChangesTab ? (
-            <ChangesTab workspacePath={active.workspacePath} visible={!panelCollapsed && activeTab === tab.id} />
+            <ChangesTab workspacePath={workspacePath} visible={!panelCollapsed && activeTab === tab.id} />
           ) : (
-            <TabComponent workspacePath={active.workspacePath} />
+            <TabComponent workspacePath={workspacePath} />
           );
           return (
             <div

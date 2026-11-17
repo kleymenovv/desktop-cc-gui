@@ -7,12 +7,19 @@ import { useState } from "react";
 import { createRoot } from "react-dom/client";
 import { HashRouter } from "react-router-dom";
 import "../../src/index.css";
-import "../../src/lib/i18n";
+import i18n from "../../src/lib/i18n";
+import { ComputerUseControl } from "../../src/features/chat/components/ComputerUseControl";
 import { ConversationFooter } from "../../src/features/chat/components/ConversationFooter";
 import { useChatStore } from "../../src/features/chat/store";
 import { useBotStore } from "../../src/features/bots/bot-store";
 import type { BotConfig } from "../../src/lib/ipc";
 import { usePromptStore } from "../../src/features/prompts/prompt-store";
+
+const params = new URLSearchParams(location.search);
+if (params.has("lang")) await i18n.changeLanguage(params.get("lang")!);
+if (params.has("computerUse")) {
+  useChatStore.setState({ engines: [{ id: "claude", available: true, enabled: true, supportsImages: true, supportsComputerUse: true, permissions: ["auto"] }] });
+}
 
 const ROOT = "/fixture-ws";
 
@@ -76,6 +83,7 @@ const ACTIVE = { engine: "claude", sessionId: "s-1", workspacePath: ROOT };
 
 function Fixture() {
   const [draft, setDraft] = useState("");
+  const [armed, setArmed] = useState(false);
   return (
     <div className="flex min-h-dvh flex-col justify-end bg-background-primary-default">
       <ConversationFooter
@@ -100,7 +108,7 @@ function Fixture() {
         streaming={false}
         noEnabledEngines={false}
         composerInputRef={{ current: null }}
-        addMenu={null}
+        addMenu={params.has("computerUse") ? <ComputerUseControl sessionKey="fixture" engine="claude" armed={armed} onToggle={() => setArmed(!armed)} onStop={() => {}} /> : null}
         cliMenu={null}
         permissionMenu={null}
         supportsImages={false}
